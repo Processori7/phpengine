@@ -111,10 +111,12 @@ config.local.php локальные переопределения конфиг�
 Виртуальное окружение повторяет серверный порядок работы:
 
 1. **Создать venv** — в виртуальной ФС появляется `/venv` с `pyvenv.cfg` и каталогом `site-packages`, который добавляется в `sys.path`. Список установленных пакетов хранится в `localStorage` браузера и в `/venv/manifest.json`.
-2. **Установить из requirements.txt** — файл разбирается целиком: комментарии, пустые строки, вложенные `-r other.txt`, маркеры окружения и пины версий. Ставится через `micropip`, зависимости подтягиваются автоматически, уже присутствующие пакеты не переустанавливаются.
+2. **Установить зависимости** — поле редактируемое: можно вписать пакеты вручную (`requests`, `python-dateutil==2.9.0`), а если в проекте есть `requirements.txt`, он подставляется в это поле. Кнопка «Сохранить в requirements.txt» записывает содержимое обратно в проект (POST `/projects/{id}/requirements`, CSRF-защищён). Список разбирается целиком: комментарии, пустые строки, вложенные `-r other.txt`, маркеры окружения и пины версий. Ставится через `micropip`, зависимости подтягиваются автоматически, уже присутствующие пакеты не переустанавливаются.
 3. **Запустить** — перед запуском окружение восстанавливается из манифеста (после перезагрузки страницы пакеты ставятся заново), затем выполняется точка входа.
 
 Строки, которые браузер выполнить не может (`-e .`, `git+https://…`, `--index-url`), не роняют установку — они показываются в консоли как пропущенные. Пакеты с C-расширениями ставятся только при наличии сборки WebAssembly; остальные `micropip` честно отвергнет с сообщением.
+
+**Сеть из браузерного режима.** `requests.get("https://google.com")` упадёт с `Failed to fetch`: браузер требует CORS-заголовки от целевого сервера, а CSP панели по умолчанию разрешает только свой домен и CDN. Для своего API добавьте его origin в настройку «Хосты для запуска в браузере» (`security.pyodide_connect_hosts`, через запятую) и включите на этом API CORS. Ограничение снимается только серверным режимом, которому нужен `proc_open`.
 
 Ограничения режима: нужен доступ браузера к CDN jsDelivr, файлы на сервер не записываются, переменные окружения и секреты хостинга недоступны, а окружение живёт в памяти вкладки (манифест — в браузере). Версия Pyodide задаётся в конфигурации (`security.pyodide_version`), включение режима — `security.browser_python`.
 
@@ -263,10 +265,12 @@ How it works:
 The virtual environment mirrors the server-side flow:
 
 1. **Create venv** — `/venv` appears in the virtual filesystem with `pyvenv.cfg` and a `site-packages` directory that is added to `sys.path`. The package manifest is stored in the browser's `localStorage` and in `/venv/manifest.json`.
-2. **Install from requirements.txt** — the file is parsed completely: comments, blank lines, nested `-r other.txt`, environment markers and version pins. Installation goes through `micropip`, dependencies are resolved automatically, and packages that are already present are not reinstalled.
+2. **Install dependencies** — the field is editable: type package names by hand (`requests`, `python-dateutil==2.9.0`), and an existing `requirements.txt` is preloaded into it. "Save to requirements.txt" writes the content back into the project (POST `/projects/{id}/requirements`, CSRF-protected). The list is parsed completely: comments, blank lines, nested `-r other.txt`, environment markers and version pins. Installation goes through `micropip`, dependencies are resolved automatically, and packages that are already present are not reinstalled.
 3. **Run** — the environment is restored from the manifest first (packages are reinstalled after a page reload), then the entry point executes.
 
 Lines the browser cannot honour (`-e .`, `git+https://…`, `--index-url`) do not abort the install — they are reported in the console as skipped. Packages with C extensions install only when a WebAssembly build exists; `micropip` rejects the rest with a clear message.
+
+**Network from the browser runtime.** `requests.get("https://google.com")` fails with `Failed to fetch`: the browser demands CORS headers from the target server, and the panel CSP only allows its own origin plus the CDN. To call your own API, add its origin to "Hosts for browser execution" (`security.pyodide_connect_hosts`, comma separated) and enable CORS there. Only the server-side runtime, which needs `proc_open`, is free of this restriction.
 
 Limits: the browser needs access to the jsDelivr CDN, nothing is written back to the server, host environment variables/secrets are unavailable, and the environment lives in the tab's memory (the manifest lives in the browser). The Pyodide version is set by `security.pyodide_version`; the mode is toggled by `security.browser_python`.
 

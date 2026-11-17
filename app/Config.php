@@ -61,6 +61,9 @@ final class Config
                 'browser_python'     => true,
                 'pyodide_version'    => '0.29.5',
                 'pyodide_cdn'        => 'https://cdn.jsdelivr.net/pyodide/',
+                // Extra hosts the browser runtime may call, comma separated, e.g.
+                // "https://api.example.com". The target must allow CORS.
+                'pyodide_connect_hosts' => '',
             ],
             'telegram' => [
                 'enabled'    => false,

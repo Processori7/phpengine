@@ -30,11 +30,11 @@
   const venvRemoveBtn = document.getElementById('pyb-venv-remove');
 
   const reqFileEl = document.getElementById('pyb-req-file');
-  const reqListEl = document.getElementById('pyb-req-list');
+  const reqInputEl = document.getElementById('pyb-req-input');
+  const reqBadgeEl = document.getElementById('pyb-req-badge');
   const reqInstallBtn = document.getElementById('pyb-req-install');
-
-  const pipEl = document.getElementById('pyb-pip');
-  const pipBtn = document.getElementById('pyb-pip-install');
+  const reqSaveBtn = document.getElementById('pyb-req-save');
+  const requirementsUrl = root.dataset.requirements || '';
 
   let pyodide = null;
   let booting = null;
@@ -209,21 +209,27 @@
   }
 
   function renderRequirements() {
-    if (!reqListEl) return;
+    if (!reqInputEl) return;
     const content = bundleFile('requirements.txt');
     if (content === null) {
-      reqFileEl.textContent = 'requirements.txt не найден в проекте';
-      reqListEl.textContent = '';
-      reqInstallBtn.disabled = true;
+      reqFileEl.textContent = 'requirements.txt в проекте нет — впишите пакеты вручную';
+      if (reqBadgeEl) {
+        reqBadgeEl.textContent = 'файла нет';
+        reqBadgeEl.className = 'badge warn';
+      }
+      reqSaveBtn.disabled = false;
+      reqInstallBtn.disabled = false;
       return;
     }
     const parsed = parseRequirements(content, 0);
+    reqInputEl.value = content.trim();
     reqFileEl.textContent = 'requirements.txt · ' + parsed.list.length + ' зависимост(ей)';
-    reqListEl.textContent = parsed.list.length ? parsed.list.join('\n') : '(пусто)';
-    if (parsed.skipped.length) {
-      reqListEl.textContent += '\n\nпропущено:\n' + parsed.skipped.join('\n');
+    if (reqBadgeEl) {
+      reqBadgeEl.textContent = parsed.list.length ? 'из файла' : 'пусто';
+      reqBadgeEl.className = 'badge ' + (parsed.list.length ? 'ok' : 'warn');
     }
     reqInstallBtn.disabled = false;
+    reqSaveBtn.disabled = false;
   }
 
   /* ---------- venv ---------- */
@@ -363,14 +369,16 @@
     try {
       await boot();
       await loadBundle();
-      const content = bundleFile('requirements.txt');
-      if (content === null) throw new Error('requirements.txt не найден в проекте.');
-      const parsed = parseRequirements(content, 0);
-      if (parsed.skipped.length) {
-        for (const note of parsed.skipped) write('пропущено: ' + note, 'muted');
+      const text = reqInputEl.value.trim();
+      if (!text) {
+        write('Список зависимостей пуст — впишите пакеты в поле выше.', 'muted');
+        setStatus('нечего ставить', 'warn');
+        return;
       }
+      const parsed = parseRequirements(text, 0);
+      for (const note of parsed.skipped) write('пропущено: ' + note, 'muted');
       if (!parsed.list.length) {
-        write('requirements.txt пуст — устанавливать нечего.', 'muted');
+        write('В списке нет ни одного поддерживаемого пакета.', 'muted');
         setStatus('нечего ставить', 'warn');
         return;
       }
@@ -386,20 +394,37 @@
     }
   }
 
-  async function installPackages() {
-    const names = pipEl.value.split(/[\s,]+/).filter(Boolean);
-    if (names.length === 0) return;
-    pipBtn.disabled = true;
+  /** Writes the textarea back to requirements.txt in the project (JSON, CSRF-protected). */
+  async function saveRequirements() {
+    if (!requirementsUrl) return;
+    reqSaveBtn.disabled = true;
     try {
-      await boot();
-      const count = await installSpecs(names, 'micropip');
-      write('— установлено в venv: ' + count, 'muted');
-      setStatus('пакеты установлены', 'ok');
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      const token = meta ? meta.getAttribute('content') : '';
+      const body = new FormData();
+      body.append('_csrf', token || '');
+      body.append('requirements', reqInputEl.value);
+      const res = await fetch(requirementsUrl, {
+        method: 'POST',
+        body,
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) throw new Error('Сервер ответил HTTP ' + res.status);
+      const data = await res.json();
+      if (!data.ok) throw new Error('Не удалось сохранить файл');
+      write('requirements.txt сохранён в проекте (' + data.bytes + ' байт)', 'muted');
+      if (bundle) {
+        const entry = (bundle.files || []).find((f) => f.path === 'requirements.txt');
+        if (entry) entry.content = reqInputEl.value;
+        else bundle.files.push({ path: 'requirements.txt', content: reqInputEl.value });
+      }
+      setStatus('requirements.txt сохранён', 'ok');
     } catch (err) {
       write(err && err.message ? err.message : String(err), 'stderr');
-      setStatus('ошибка установки', 'fail');
+      setStatus('ошибка сохранения', 'fail');
     } finally {
-      pipBtn.disabled = false;
+      reqSaveBtn.disabled = false;
     }
   }
 
@@ -444,10 +469,9 @@
       if (data.skipped) write('// пропущено файлов: ' + data.skipped, 'muted');
 
       if (!state.packages.length) {
-        const req = bundleFile('requirements.txt');
-        const parsed = req === null ? { list: [] } : parseRequirements(req, 0);
+        const parsed = parseRequirements(reqInputEl.value || '', 0);
         if (parsed.list.length) {
-          write('// в requirements.txt ' + parsed.list.length + ' зависимост(ей) — нажмите «Установить из requirements.txt», если импорты не находятся', 'muted');
+          write('// в зависимостях ' + parsed.list.length + ' пакет(ов) — нажмите «Установить», если импорты не находятся', 'muted');
         }
       }
 
@@ -464,7 +488,17 @@
       write('— завершено за ' + Math.round(performance.now() - started) + ' мс', 'muted');
       setStatus('готово', 'ok');
     } catch (err) {
-      write(err && err.message ? err.message : String(err), 'stderr');
+      const message = err && err.message ? err.message : String(err);
+      write(message, 'stderr');
+      if (/Failed to fetch|ConnectionError|Connection aborted|NetworkError|CORS/i.test(message)) {
+        write(
+          'Браузерный режим не может обращаться к внешним сайтам напрямую: нужен CORS от целевого сервера, ' +
+          'а CSP панели разрешает только свой домен, CDN и хосты из настройки security.pyodide_connect_hosts. ' +
+          'Для своего API добавьте его origin в эту настройку и включите на нём CORS; серверный режим ' +
+          '(нужен proc_open) таких ограничений не имеет.',
+          'muted'
+        );
+      }
       setStatus('ошибка', 'fail');
     } finally {
       runBtn.disabled = false;
@@ -489,7 +523,7 @@
   venvCreateBtn.addEventListener('click', createVenv);
   venvRemoveBtn.addEventListener('click', removeVenv);
   reqInstallBtn.addEventListener('click', installRequirements);
-  pipBtn.addEventListener('click', installPackages);
+  reqSaveBtn.addEventListener('click', saveRequirements);
 
   codeEl.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {

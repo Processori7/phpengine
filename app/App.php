@@ -131,6 +131,10 @@ final class App
             self::browserPythonPage((int) $m[1]);
             return;
         }
+        if (preg_match('#^/projects/(\d+)/requirements$#', $path, $m) && $method === 'POST') {
+            self::saveRequirements((int) $m[1]);
+            return;
+        }
         if (preg_match('#^/projects/(\d+)/source$#', $path, $m) && $method === 'GET') {
             self::projectSource((int) $m[1]);
             return;
@@ -240,7 +244,7 @@ final class App
             self::redirect('/projects/' . $id);
         }
         $entry = (string) $project['entrypoint'];
-        Security::cspAllowCdn((string) Config::get('security.pyodide_cdn'));
+        Security::cspAllowCdn((string) Config::get('security.pyodide_cdn'), self::pyodideConnectHosts());
         self::view('browser-python', [
             'title'   => 'Браузер: ' . $project['name'],
             'project' => $project,
@@ -256,6 +260,14 @@ final class App
     {
         return rtrim((string) Config::get('security.pyodide_cdn'), '/')
             . '/v' . (string) Config::get('security.pyodide_version') . '/full/';
+    }
+
+    /** @return string[] extra origins allowed in connect-src for the browser runtime */
+    private static function pyodideConnectHosts(): array
+    {
+        $raw = (string) Config::get('security.pyodide_connect_hosts', '');
+        if ($raw === '') return [];
+        return array_values(array_filter(array_map('trim', preg_split('/[\s,]+/', $raw) ?: [])));
     }
 
     /** Text-only source bundle for the browser runner (the VM lives in the browser). */
@@ -290,6 +302,22 @@ final class App
             'skipped' => $skipped,
             'bytes'   => $total,
         ]);
+    }
+
+    /** Stores requirements.txt edited in the browser runner (JSON, CSRF-protected). */
+    private static function saveRequirements(int $id): void
+    {
+        Security::requireCsrf();
+        $project = ProjectManager::find($id);
+        if ($project === null) self::json(['error' => 'not found'], 404);
+        $body = (string) ($_POST['requirements'] ?? '');
+        if (strlen($body) > 65536) self::json(['error' => 'too large'], 413);
+        if (!ProjectManager::write($project, 'requirements.txt', $body)) {
+            self::json(['error' => 'write failed'], 500);
+        }
+        Database::run('UPDATE projects SET updated_at = ? WHERE id = ?', [time(), $project['id']]);
+        Security::audit('file_saved', $project['slug'] . '/requirements.txt');
+        self::json(['ok' => true, 'bytes' => strlen($body)]);
     }
 
     private static function settingsPage(): void
@@ -723,6 +751,11 @@ final class App
         if (preg_match('/[;&|`$<>]/', $bin)) $bin = '';
         Database::setSetting('security.python_binary', $bin);
         Config::setOverride('security.python_binary', $bin);
+
+        // Origins the browser runtime may call; validated again in Security::cspAllowCdn().
+        $connectHosts = trim(mb_substr((string) ($_POST['pyodide_connect_hosts'] ?? ''), 0, 500));
+        Database::setSetting('security.pyodide_connect_hosts', $connectHosts);
+        Config::setOverride('security.pyodide_connect_hosts', $connectHosts);
 
         $whitelist = trim((string) ($_POST['ip_whitelist'] ?? ''));
         $parts = [];

@@ -57,6 +57,11 @@
         <input id="python_binary" name="python_binary" type="text" class="mono" placeholder="/usr/bin/python3 или C:\Python313\python.exe" value="<?= e(Config::get('security.python_binary', '')) ?>">
       </div>
       <div class="field">
+        <label for="pyodide_connect_hosts">Хосты для запуска в браузере (CORS, через запятую)</label>
+        <input id="pyodide_connect_hosts" name="pyodide_connect_hosts" type="text" class="mono" placeholder="https://api.example.com" value="<?= e(Config::get('security.pyodide_connect_hosts', '')) ?>">
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Браузерный режим по умолчанию не может обращаться к внешним сайтам. Здесь можно разрешить конкретные origin — они должны отдавать CORS-заголовки.</p>
+      </div>
+      <div class="field">
         <label for="ip_whitelist">Белый список IP (через запятую, пусто = все)</label>
         <input id="ip_whitelist" name="ip_whitelist" type="text" class="mono" placeholder="127.0.0.1, 192.168.1.0/24" value="<?= e(Config::get('security.ip_whitelist', '')) ?>">
       </div>

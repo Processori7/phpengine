@@ -13,18 +13,26 @@ final class Security
     /**
      * Re-issues the CSP for pages that must load Pyodide (CPython compiled to
      * WebAssembly) from a CDN. Everything else keeps the strict default policy.
+     *
+     * @param string[] $connectHosts extra origins the runtime may fetch (CORS applies)
      */
-    public static function cspAllowCdn(string $cdn): void
+    public static function cspAllowCdn(string $cdn, array $connectHosts = []): void
     {
         // A trailing slash matters: without it the CSP path matches only exactly
         // "/pyodide" instead of being a prefix of "/pyodide/v0.29.5/full/...".
         $cdn = rtrim($cdn, '/') . '/';
+        $extra = '';
+        foreach ($connectHosts as $host) {
+            $host = trim($host);
+            if ($host === '' || preg_match('#^https?://[A-Za-z0-9.\-]+(:\d+)?$#', $host) !== 1) continue;
+            $extra .= ' ' . $host;
+        }
         header(
             "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
             . "form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; "
             . "img-src 'self' data:; worker-src 'self' blob:; "
             . "script-src 'self' 'wasm-unsafe-eval' blob: " . $cdn . '; '
-            . "connect-src 'self' blob: " . $cdn
+            . "connect-src 'self' blob: " . $cdn . $extra
         );
     }
 
