@@ -106,10 +106,17 @@ config.local.php локальные переопределения конфиг�
 
 - файлы проекта (только текст, до 512 КБ на файл) отдаёт JSON-эндпоинт `/projects/{id}/source`;
 - они монтируются в виртуальную файловую систему Pyodide в `/project`, точка входа запускается через `runpy`;
-- `stdout`/`stderr` перехватываются и печатаются в консоль панели;
-- чистые Python-пакеты ставятся в браузер через `micropip` (поле «Пакеты»).
+- `stdout`/`stderr` перехватываются и печатаются в консоль панели.
 
-Ограничения режима: нужен доступ браузера к CDN jsDelivr, пакеты с C-расширениями работают только при наличии сборки WebAssembly, файлы на сервер не записываются, а переменные окружения и секреты хостинга недоступны. Версия Pyodide задаётся в конфигурации (`security.pyodide_version`), включение режима — `security.browser_python`.
+Виртуальное окружение повторяет серверный порядок работы:
+
+1. **Создать venv** — в виртуальной ФС появляется `/venv` с `pyvenv.cfg` и каталогом `site-packages`, который добавляется в `sys.path`. Список установленных пакетов хранится в `localStorage` браузера и в `/venv/manifest.json`.
+2. **Установить из requirements.txt** — файл разбирается целиком: комментарии, пустые строки, вложенные `-r other.txt`, маркеры окружения и пины версий. Ставится через `micropip`, зависимости подтягиваются автоматически, уже присутствующие пакеты не переустанавливаются.
+3. **Запустить** — перед запуском окружение восстанавливается из манифеста (после перезагрузки страницы пакеты ставятся заново), затем выполняется точка входа.
+
+Строки, которые браузер выполнить не может (`-e .`, `git+https://…`, `--index-url`), не роняют установку — они показываются в консоли как пропущенные. Пакеты с C-расширениями ставятся только при наличии сборки WebAssembly; остальные `micropip` честно отвергнет с сообщением.
+
+Ограничения режима: нужен доступ браузера к CDN jsDelivr, файлы на сервер не записываются, переменные окружения и секреты хостинга недоступны, а окружение живёт в памяти вкладки (манифест — в браузере). Версия Pyodide задаётся в конфигурации (`security.pyodide_version`), включение режима — `security.browser_python`.
 
 Старый способ задать SQLite-файл через `config.local.php` тоже работает как значение по умолчанию, но сохранённые в админке настройки имеют приоритет. Через `config.local.php` по-прежнему можно переопределить пути `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` и `max_files`.
 
@@ -251,10 +258,17 @@ How it works:
 
 - the `/projects/{id}/source` JSON endpoint serves the project files (text only, 512 KB per file);
 - they are mounted into the Pyodide virtual filesystem at `/project` and the entry point runs through `runpy`;
-- `stdout`/`stderr` are captured and printed into the panel console;
-- pure-Python packages are installed in the browser with `micropip` (the "Packages" field).
+- `stdout`/`stderr` are captured and printed into the panel console.
 
-Limits: the browser needs access to the jsDelivr CDN, packages with C extensions only work when a WebAssembly build exists, nothing is written back to the server, and host environment variables/secrets are unavailable. The Pyodide version is set by `security.pyodide_version`; the mode is toggled by `security.browser_python`.
+The virtual environment mirrors the server-side flow:
+
+1. **Create venv** — `/venv` appears in the virtual filesystem with `pyvenv.cfg` and a `site-packages` directory that is added to `sys.path`. The package manifest is stored in the browser's `localStorage` and in `/venv/manifest.json`.
+2. **Install from requirements.txt** — the file is parsed completely: comments, blank lines, nested `-r other.txt`, environment markers and version pins. Installation goes through `micropip`, dependencies are resolved automatically, and packages that are already present are not reinstalled.
+3. **Run** — the environment is restored from the manifest first (packages are reinstalled after a page reload), then the entry point executes.
+
+Lines the browser cannot honour (`-e .`, `git+https://…`, `--index-url`) do not abort the install — they are reported in the console as skipped. Packages with C extensions install only when a WebAssembly build exists; `micropip` rejects the rest with a clear message.
+
+Limits: the browser needs access to the jsDelivr CDN, nothing is written back to the server, host environment variables/secrets are unavailable, and the environment lives in the tab's memory (the manifest lives in the browser). The Pyodide version is set by `security.pyodide_version`; the mode is toggled by `security.browser_python`.
 
 Defining the SQLite file through `config.local.php` still works as a default, but settings saved in the admin UI take precedence. `config.local.php` can still override `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` and `max_files`.
 

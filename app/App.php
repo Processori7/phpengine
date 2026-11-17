@@ -247,7 +247,8 @@ final class App
             'entry'   => $entry,
             'code'    => $entry !== '' ? (ProjectManager::read($project, $entry) ?? '') : '',
             'indexUrl' => self::pyodideIndexUrl(),
-            'scripts' => ['/assets/js/browser-python.js'],
+            // Static files are served by the web server, so bust the cache by mtime.
+            'scripts' => ['/assets/js/browser-python.js?v=' . (string) @filemtime((string) Config::get('public') . '/assets/js/browser-python.js')],
         ]);
     }
 
