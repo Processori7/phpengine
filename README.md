@@ -82,6 +82,7 @@ config.local.php локальные переопределения конфиг�
 - Для MySQL задаются хост, порт, имя базы, пользователь, пароль и кодировка (`utf8mb4` по умолчанию). База должна существовать заранее.
 - Параметры хранятся в `storage/db/connection.json` с правами 0600 на Linux. Пароль шифруется ключом из `storage/db/app.key`.
 - Схема таблиц создаётся и обновляется автоматически для выбранного драйвера.
+- Если `connection.json` скопирован с Windows, путь вида `C:\...` на Linux игнорируется и заменяется на `storage/db/engine.sqlite` — иначе на хостинге создалась бы пустая база с именем `C:`.
 
 **Важно:** переключение драйвера не переносит данные. Если перейти с SQLite на пустую MySQL-базу, администратора и проекты нужно создать заново — движок покажет `/install`.
 
@@ -200,6 +201,7 @@ The driver and connection parameters are selected on the "Settings" page under "
 - For MySQL, set host, port, database name, user, password and charset (`utf8mb4` by default). The database must already exist.
 - Settings are stored in `storage/db/connection.json` with 0600 permissions on Linux. The password is encrypted with the key from `storage/db/app.key`.
 - Table schemas are created and upgraded automatically for the selected driver.
+- If `connection.json` was copied from Windows, a `C:\...` path is ignored on Linux and replaced with `storage/db/engine.sqlite` — otherwise an empty database named `C:` would be created on the host.
 
 **Important:** switching drivers does not migrate data. Moving from SQLite to an empty MySQL database means creating the administrator and projects again — the engine will show `/install`.
 

@@ -35,5 +35,4 @@
     <label class="check"><input type="checkbox" name="remember" value="1"> Запомнить меня (14 дней)</label>
     <button class="btn primary" type="submit" style="width:100%;margin-top:14px">Войти</button>
   </form>
-  <p class="muted" style="font-size:12px;margin:18px 0 0">Неудачные попытки ограничиваются и блокируются. Токен «запомнить меня» привязан к соли пользователя и вращается при каждом входе.</p>
 <?php endif; ?>

@@ -111,6 +111,10 @@ final class Database
     public static function testConnection(array $cfg): array
     {
         try {
+            $rawPath = (string) ($cfg['path'] ?? '');
+            if (self::invalidWindowsPath($rawPath)) {
+                return ['ok' => false, 'message' => 'Путь Windows-стиля (C:\\...) нельзя использовать на этом хостинге. Укажите путь, начинающийся с /, или оставьте значение по умолчанию.'];
+            }
             $cfg = self::normalizeConfig($cfg);
             if ($cfg['driver'] === 'sqlite') {
                 $file = self::normalizeSqlitePath((string) $cfg['path']);
@@ -270,6 +274,11 @@ final class Database
         $raw = json_decode((string) file_get_contents($path), true);
         if (!is_array($raw)) return $defaults;
         $cfg = array_merge($defaults, $raw);
+        if (self::invalidWindowsPath((string) $cfg['path'])) {
+            // A connection file copied from a Windows machine must not create
+            // a bogus "C:" directory on a Unix host and an empty database.
+            $cfg['path'] = (string) Config::get('db_file');
+        }
         if (str_starts_with((string) $cfg['pass'], 'enc1:')) {
             $cfg['pass'] = SecureStore::decrypt((string) $cfg['pass']);
         }
@@ -292,9 +301,13 @@ final class Database
                 throw new InvalidArgumentException('Некорректное имя базы данных MySQL.');
             }
         }
+        $path = trim(str_replace("\0", '', (string) ($cfg['path'] ?? Config::get('db_file'))));
+        if ($path === '' || self::invalidWindowsPath($path)) {
+            $path = (string) Config::get('db_file');
+        }
         return [
             'driver'  => $driver,
-            'path'    => trim((string) ($cfg['path'] ?? Config::get('db_file'))),
+            'path'    => $path,
             'host'    => $host,
             'port'    => max(1, min(65535, (int) ($cfg['port'] ?? 3306))),
             'name'    => $name,
@@ -306,13 +319,25 @@ final class Database
 
     private static function normalizeSqlitePath(string $path): string
     {
-        $path = trim($path);
-        if ($path === '') $path = (string) Config::get('db_file');
-        $absolute = preg_match('#^([A-Za-z]:[\\\\/]|/|\\\\\\\\)#', $path) === 1;
+        $path = trim(str_replace("\0", '', $path));
+        if ($path === '' || self::invalidWindowsPath($path)) {
+            $path = (string) Config::get('db_file');
+        }
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $absolute = preg_match('#^([A-Za-z]:[\\\\/]|/|\\\\\\\\)#', $path) === 1;
+        } else {
+            $absolute = str_starts_with($path, '/');
+        }
         if (!$absolute) {
             $path = rtrim((string) Config::get('root'), '/\\') . '/' . $path;
         }
         return $path;
+    }
+
+    /** A Windows drive path in a connection file would silently create an empty DB on Unix. */
+    private static function invalidWindowsPath(string $path): bool
+    {
+        return DIRECTORY_SEPARATOR !== '\\' && preg_match('#^[A-Za-z]:[\\\\/]#', trim($path)) === 1;
     }
 
     private static function safeError(Throwable $e): string
