@@ -1,0 +1,27 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /
+
+# Never expose dotfiles, dumps, keys, logs or common probe scripts.
+<FilesMatch "(^\.|\.env|\.git|composer\.(json|lock)|phpinfo\.php|info\.php|.*\.(log|sqlite|sqlite3|key|bak|ini|sh|pyc))$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header unset X-Powered-By
+  Header unset Server
+</IfModule>
+
+RewriteRule ^(app|storage|views|runtime|config\.local\.php) - [F,L]
+
+# Static files live in public/ but the host may point DocumentRoot at the project root.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
+RewriteRule ^(.+)$ public/$1 [L]
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^(.+)$ public/index.php/$1 [QSA,L]
+RewriteRule ^$ public/index.php [QSA,L]

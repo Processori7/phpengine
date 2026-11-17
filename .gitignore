@@ -1,0 +1,15 @@
+# Local runtime and generated data
+/runtime/
+/storage/
+/.workbuddy-ai/
+
+# Local configuration and secrets
+/config.local.php
+*.key
+*.sqlite
+*.sqlite3
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
