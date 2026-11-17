@@ -244,16 +244,49 @@ final class App
             self::redirect('/projects/' . $id);
         }
         $entry = (string) $project['entrypoint'];
-        Security::cspAllowCdn((string) Config::get('security.pyodide_cdn'), self::pyodideConnectHosts());
+        // Telegram Bot API sends CORS headers, so bots work from the browser as
+        // soon as the CSP allows the origin. Other hosts stay opt-in.
+        $connect = self::pyodideConnectHosts();
+        $connect[] = 'https://api.telegram.org';
+        Security::cspAllowCdn((string) Config::get('security.pyodide_cdn'), $connect);
         self::view('browser-python', [
             'title'   => 'Браузер: ' . $project['name'],
             'project' => $project,
             'entry'   => $entry,
             'code'    => $entry !== '' ? (ProjectManager::read($project, $entry) ?? '') : '',
             'indexUrl' => self::pyodideIndexUrl(),
+            'botExample' => self::botExample($entry !== '' ? $entry : 'main.py'),
             // Static files are served by the web server, so bust the cache by mtime.
-            'scripts' => ['/assets/js/browser-python.js?v=' . (string) @filemtime((string) Config::get('public') . '/assets/js/browser-python.js')],
+            'scripts' => [
+                '/assets/js/browser-python.js?v=' . (string) @filemtime((string) Config::get('public') . '/assets/js/browser-python.js'),
+            ],
         ]);
+    }
+
+    private static function botExample(string $entry): string
+    {
+        return <<<PY
+# $entry — эхо-бот на getUpdates (работает в браузерном режиме)
+import time
+import pyhost_bot as tg
+
+offset = None
+print("bot started")
+while True:
+    try:
+        updates = tg.get_updates(offset=offset, timeout=20)
+    except Exception as exc:
+        print("telegram error:", exc)
+        time.sleep(3)
+        continue
+    for update in updates:
+        offset = update["update_id"] + 1
+        message = update.get("message") or {}
+        text = message.get("text")
+        chat = (message.get("chat") or {}).get("id")
+        if text and chat:
+            tg.send_message(chat, "echo: " + text)
+PY;
     }
 
     private static function pyodideIndexUrl(): string

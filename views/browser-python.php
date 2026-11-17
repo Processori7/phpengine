@@ -19,6 +19,7 @@
   data-project="<?= (int) $project['id'] ?>"
   data-source="/projects/<?= (int) $project['id'] ?>/source"
   data-requirements="/projects/<?= (int) $project['id'] ?>/requirements"
+  data-worker="/assets/js/bot-worker.js?v=<?= (int) @filemtime((string) Config::get('public') . '/assets/js/bot-worker.js') ?>"
   data-index-url="<?= e($indexUrl) ?>"
   data-entry="<?= e($entry) ?>"
 >
@@ -72,5 +73,29 @@
   <section class="card">
     <div class="card head"><h2>Вывод</h2></div>
     <pre id="pyb-out" class="mono" style="min-height:180px;max-height:460px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12.5px;line-height:1.55;margin:0"></pre>
+  </section>
+
+  <section class="card">
+    <div class="card head">
+      <h2>Бот (долгий процесс)</h2>
+      <span class="badge warn" id="pyb-bot-status">остановлен</span>
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:0">
+      Запускает точку входа в фоновом Web Worker: long polling не подвешивает панель, а «Остановить» убивает процесс сразу.
+      Бот живёт, пока открыта вкладка. Для круглосуточной работы нужен хостинг с <code class="inline">proc_open</code> — там тот же скрипт запускается как демон.
+    </p>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn primary sm" id="pyb-bot-start" type="button">Запустить бота</button>
+      <button class="btn danger sm" id="pyb-bot-stop" type="button" disabled>Остановить</button>
+    </div>
+    <pre id="pyb-bot-log" class="mono" style="min-height:140px;max-height:320px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12.5px;line-height:1.55;margin:0"></pre>
+    <details style="margin-top:14px">
+      <summary class="muted" style="cursor:pointer;font-size:13px">Пример бота на getUpdates (скопировать в код выше)</summary>
+      <pre class="mono" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;overflow:auto;margin:10px 0 0"><?= e($botExample) ?></pre>
+    </details>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">
+      Токен берётся из <code class="inline">BOT_TOKEN=…</code> в <code class="inline">.env</code> проекта или передаётся в функцию явно.
+      Для запросов к Telegram CSP страницы уже разрешает <code class="inline">api.telegram.org</code>; другие хосты добавляются в настройке «Хосты для запуска в браузере».
+    </p>
   </section>
 </div>

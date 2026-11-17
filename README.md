@@ -118,6 +118,56 @@ config.local.php локальные переопределения конфиг�
 
 **Сеть из браузерного режима.** `requests.get("https://google.com")` упадёт с `Failed to fetch`: браузер требует CORS-заголовки от целевого сервера, а CSP панели по умолчанию разрешает только свой домен и CDN. Для своего API добавьте его origin в настройку «Хосты для запуска в браузере» (`security.pyodide_connect_hosts`, через запятую) и включите на этом API CORS. Ограничение снимается только серверным режимом, которому нужен `proc_open`.
 
+### Боты и долгие процессы
+
+Боту нужен долгоживущий процесс: long polling или обработка вебхуков не заканчиваются за один запуск. Панель умеет запускать такой процесс двумя способами.
+
+**В браузере (работает на любом хостинге).** Кнопка «Запустить бота» на странице `/projects/{id}/browser` поднимает точку входа в отдельном Web Worker. Цикл живёт в фоне вкладки, панель не подвисает, а «Остановить» убивает процесс мгновенно. Пакет `requests` в этот режим подставляется автоматически, даже если его нет в зависимостях.
+
+Токен берётся из `BOT_TOKEN=…` в `.env` проекта или передаётся в функцию явно. Для Telegram CSP страницы уже разрешает `api.telegram.org` — он отдаёт CORS-заголовки, поэтому прокси не нужен. В проект при запуске подкладывается модуль `pyhost_bot`:
+
+```python
+import pyhost_bot as tg
+
+offset = None
+while True:
+    for update in tg.get_updates(offset=offset, timeout=20):
+        offset = update["update_id"] + 1
+        message = update.get("message") or {}
+        chat = (message.get("chat") or {}).get("id")
+        if message.get("text") and chat:
+            tg.send_message(chat, "echo: " + message["text"])
+```
+
+Доступно: `tg.call(method, **params)`, `tg.get_updates(...)`, `tg.send_message(...)` — это тонкая обёртка над Bot API, ошибки приходят как исключения с кодом и описанием от Telegram.
+
+Ограничение: бот живёт, пока открыта вкладка. Закрыли вкладку или уснул ноутбук — бот остановился.
+
+**Круглосуточно (нужен хостинг с `proc_open`).** Тот же скрипт запускается как обычный процесс на сервере, а панель отвечает за venv и зависимости. На VPS это делается системным юнитом:
+
+```ini
+# /etc/systemd/system/pyhost-bot.service
+[Unit]
+Description=PyHost bot
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/phpengine/storage/projects/my-bot
+ExecStart=/var/www/phpengine/storage/venvs/my-bot/bin/python main.py
+Restart=always
+Environment=BOT_TOKEN=123456:AA...
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl enable --now pyhost-bot
+journalctl -u pyhost-bot -f
+```
+
+`Restart=always` даёт автоперезапуск после падений и перезагрузки сервера — то, чего бесплатный хостинг дать не может.
+
 Ограничения режима: нужен доступ браузера к CDN jsDelivr, файлы на сервер не записываются, переменные окружения и секреты хостинга недоступны, а окружение живёт в памяти вкладки (манифест — в браузере). Версия Pyodide задаётся в конфигурации (`security.pyodide_version`), включение режима — `security.browser_python`.
 
 Старый способ задать SQLite-файл через `config.local.php` тоже работает как значение по умолчанию, но сохранённые в админке настройки имеют приоритет. Через `config.local.php` по-прежнему можно переопределить пути `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` и `max_files`.
@@ -271,6 +321,56 @@ The virtual environment mirrors the server-side flow:
 Lines the browser cannot honour (`-e .`, `git+https://…`, `--index-url`) do not abort the install — they are reported in the console as skipped. Packages with C extensions install only when a WebAssembly build exists; `micropip` rejects the rest with a clear message.
 
 **Network from the browser runtime.** `requests.get("https://google.com")` fails with `Failed to fetch`: the browser demands CORS headers from the target server, and the panel CSP only allows its own origin plus the CDN. To call your own API, add its origin to "Hosts for browser execution" (`security.pyodide_connect_hosts`, comma separated) and enable CORS there. Only the server-side runtime, which needs `proc_open`, is free of this restriction.
+
+#### Bots and long-running processes
+
+A bot needs a long-lived process: long polling or webhook handling never finishes in a single run. The panel supports two ways to run one.
+
+**In the browser (works on any host).** "Start bot" on `/projects/{id}/browser` runs the entry point inside a dedicated Web Worker. The loop lives in the background of the tab, the panel stays responsive, and "Stop" kills the process instantly. The `requests` package is injected automatically in this mode, even when it is missing from the dependencies.
+
+The token comes from `BOT_TOKEN=…` in the project `.env` or is passed explicitly. For Telegram the page CSP already allows `api.telegram.org` — it sends CORS headers, so no proxy is needed. A `pyhost_bot` module is placed into the project on every run:
+
+```python
+import pyhost_bot as tg
+
+offset = None
+while True:
+    for update in tg.get_updates(offset=offset, timeout=20):
+        offset = update["update_id"] + 1
+        message = update.get("message") or {}
+        chat = (message.get("chat") or {}).get("id")
+        if message.get("text") and chat:
+            tg.send_message(chat, "echo: " + message["text"])
+```
+
+Available: `tg.call(method, **params)`, `tg.get_updates(...)`, `tg.send_message(...)` — a thin wrapper over the Bot API; failures raise exceptions carrying Telegram's code and description.
+
+Limitation: the bot lives only while the tab is open. Close the tab or suspend the laptop and the bot stops.
+
+**24/7 (requires a host with `proc_open`).** The same script runs as a normal server process, while the panel handles the venv and dependencies. On a VPS use a systemd unit:
+
+```ini
+# /etc/systemd/system/pyhost-bot.service
+[Unit]
+Description=PyHost bot
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/phpengine/storage/projects/my-bot
+ExecStart=/var/www/phpengine/storage/venvs/my-bot/bin/python main.py
+Restart=always
+Environment=BOT_TOKEN=123456:AA...
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl enable --now pyhost-bot
+journalctl -u pyhost-bot -f
+```
+
+`Restart=always` restarts the bot after crashes and reboots — something a free host cannot provide.
 
 Limits: the browser needs access to the jsDelivr CDN, nothing is written back to the server, host environment variables/secrets are unavailable, and the environment lives in the tab's memory (the manifest lives in the browser). The Pyodide version is set by `security.pyodide_version`; the mode is toggled by `security.browser_python`.
 

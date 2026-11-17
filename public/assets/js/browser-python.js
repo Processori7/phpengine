@@ -35,6 +35,78 @@
   const reqInstallBtn = document.getElementById('pyb-req-install');
   const reqSaveBtn = document.getElementById('pyb-req-save');
   const requirementsUrl = root.dataset.requirements || '';
+  const workerUrl = root.dataset.worker || '/assets/js/bot-worker.js';
+
+  const botStartBtn = document.getElementById('pyb-bot-start');
+  const botStopBtn = document.getElementById('pyb-bot-stop');
+  const botStatusEl = document.getElementById('pyb-bot-status');
+  const botLogEl = document.getElementById('pyb-bot-log');
+
+  /*
+   * Written into the project FS before a run so bot code can talk to Telegram
+   * without caring about URLs. The token comes from .env or an explicit argument.
+   */
+  const HELPER_PY = [
+    '"""Telegram Bot API helper for the browser runtime."""',
+    'import json',
+    'import os',
+    '',
+    'API = "https://api.telegram.org/bot{token}/{method}"',
+    '',
+    '',
+    'def _from_env_file():',
+    '    try:',
+    '        with open("/project/.env", encoding="utf-8") as fh:',
+    '            for line in fh:',
+    '                line = line.strip()',
+    '                if not line or line.startswith("#") or "=" not in line:',
+    '                    continue',
+    '                key, value = line.split("=", 1)',
+    '                if key.strip() in ("BOT_TOKEN", "TELEGRAM_BOT_TOKEN"):',
+    '                    return value.strip().strip("\\"\'")',
+    '    except OSError:',
+    '        pass',
+    '    return ""',
+    '',
+    '',
+    'def token():',
+    '    return (os.environ.get("BOT_TOKEN")',
+    '            or os.environ.get("TELEGRAM_BOT_TOKEN")',
+    '            or _from_env_file())',
+    '',
+    '',
+    'def call(method, bot_token=None, **params):',
+    '    value = bot_token or token()',
+    '    if not value:',
+    '        raise RuntimeError("BOT_TOKEN не задан: добавьте BOT_TOKEN=... в .env проекта")',
+    '    try:',
+    '        import requests',
+    '    except ImportError:',
+    '        raise RuntimeError("пакет requests не установлен: нажмите «Установить» в блоке зависимостей")',
+    '    # Form-encoded body keeps the request "simple": no CORS preflight.',
+    '    resp = requests.post(API.format(token=value, method=method), data=params, timeout=90)',
+    '    try:',
+    '        data = resp.json()',
+    '    except Exception:',
+    '        raise RuntimeError("Telegram API вернул не JSON: %s" % resp.text[:200])',
+    '    if not data.get("ok"):',
+    '        raise RuntimeError("%s: %s" % (data.get("error_code", "error"), data.get("description", "unknown")))',
+    '    return data.get("result")',
+    '',
+    '',
+    'def get_updates(offset=None, timeout=20, allowed_updates=None, bot_token=None):',
+    '    params = {"timeout": timeout}',
+    '    if offset is not None:',
+    '        params["offset"] = offset',
+    '    if allowed_updates is not None:',
+    '        params["allowed_updates"] = json.dumps(allowed_updates)',
+    '    return call("getUpdates", bot_token, **params)',
+    '',
+    '',
+    'def send_message(chat_id, text, bot_token=None, **extra):',
+    '    return call("sendMessage", bot_token, chat_id=chat_id, text=text, **extra)',
+    '',
+  ].join('\n');
 
   let pyodide = null;
   let booting = null;
@@ -462,6 +534,7 @@
       const py = await boot();
       const data = await mountProject(py);
       await restoreVenv(py);
+      py.FS.writeFile('/project/pyhost_bot.py', HELPER_PY);
 
       const entry = entryFromServer || data.entry || '';
       if (!entry) throw new Error('У проекта не задана точка входа. Укажите её на странице проекта.');
@@ -505,6 +578,90 @@
     }
   }
 
+  /* ---------- bot mode (long-lived worker) ---------- */
+
+  let botWorker = null;
+
+  function botLog(text, cls) {
+    if (!botLogEl) return;
+    const line = document.createElement('span');
+    if (cls) line.className = cls;
+    line.textContent = String(text).replace(/\n$/, '') + '\n';
+    botLogEl.appendChild(line);
+    botLogEl.scrollTop = botLogEl.scrollHeight;
+  }
+
+  function setBotStatus(text, cls) {
+    if (!botStatusEl) return;
+    botStatusEl.textContent = text;
+    botStatusEl.className = 'badge' + (cls ? ' ' + cls : '');
+  }
+
+  function stopBot() {
+    if (botWorker) {
+      botWorker.terminate();
+      botWorker = null;
+    }
+    if (botStartBtn) botStartBtn.disabled = false;
+    if (botStopBtn) botStopBtn.disabled = true;
+    setBotStatus('остановлен', 'warn');
+  }
+
+  async function startBot() {
+    if (botWorker) return;
+    botStartBtn.disabled = true;
+    botLogEl.textContent = '';
+    try {
+      await loadBundle();
+      const entry = entryFromServer || bundle.entry || '';
+      if (!entry) throw new Error('У проекта не задана точка входа.');
+
+      const packages = state.packages.slice();
+      if (!packages.some((p) => /^requests([=<>!~ ]|$)/i.test(p))) {
+        packages.push('requests');
+      }
+
+      botWorker = new Worker(workerUrl);
+      botWorker.onmessage = (event) => {
+        const data = event.data || {};
+        if (data.type === 'status') {
+          setBotStatus(data.text || 'работает', 'ok');
+        } else if (data.type === 'done') {
+          botLog(data.text || 'скрипт завершился', 'muted');
+          stopBot();
+        } else if (data.type === 'error') {
+          botLog(data.text, 'stderr');
+          stopBot();
+          setBotStatus('ошибка', 'fail');
+        } else {
+          botLog(data.text, data.type === 'err' ? 'stderr' : '');
+        }
+      };
+      botWorker.onerror = (event) => {
+        botLog(event.message || 'ошибка воркера', 'stderr');
+        stopBot();
+        setBotStatus('ошибка', 'fail');
+      };
+
+      botWorker.postMessage({
+        type: 'start',
+        indexUrl,
+        entry,
+        code: codeEl.value,
+        files: bundle.files || [],
+        packages,
+        helper: HELPER_PY,
+      });
+      setBotStatus('загрузка…', 'warn');
+      botStopBtn.disabled = false;
+      botLog('запуск бота в фоновом воркере (вкладку не закрывайте)', 'muted');
+    } catch (err) {
+      botLog(err && err.message ? err.message : String(err), 'stderr');
+      stopBot();
+      setBotStatus('ошибка', 'fail');
+    }
+  }
+
   /* ---------- wiring ---------- */
 
   loadState();
@@ -524,6 +681,11 @@
   venvRemoveBtn.addEventListener('click', removeVenv);
   reqInstallBtn.addEventListener('click', installRequirements);
   reqSaveBtn.addEventListener('click', saveRequirements);
+  botStartBtn.addEventListener('click', startBot);
+  botStopBtn.addEventListener('click', stopBot);
+  window.addEventListener('beforeunload', () => {
+    if (botWorker) botWorker.terminate();
+  });
 
   codeEl.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {
