@@ -88,12 +88,16 @@ final class RuntimeManager
      */
     public static function migrateLegacy(): void
     {
-        $legacy = (string) Config::get('root') . '/runtime/python';
+        $legacyRoot = (string) Config::get('root') . '/runtime';
+        if (!is_dir($legacyRoot)) return;
+        $legacy = $legacyRoot . '/python';
         $current = (string) Config::get('runtime') . '/python';
-        if ($legacy === $current || !is_dir($legacy) || is_dir($current)) return;
-        if (!is_dir(dirname($current))) @mkdir(dirname($current), 0775, true);
-        @rename($legacy, $current);
-        @rmdir((string) Config::get('root') . '/runtime');
+        if (is_dir($legacy) && !is_dir($current)) {
+            if (!is_dir(dirname($current))) @mkdir(dirname($current), 0775, true);
+            @rename($legacy, $current);
+        }
+        // Remove the directory even when it was already empty: it shadows /runtime.
+        @rmdir($legacyRoot);
     }
 
     public static function binary(): string
