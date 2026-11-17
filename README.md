@@ -42,6 +42,17 @@
 php -S 127.0.0.1:8765 -t public
 ```
 
+### Хостинг с DocumentRoot в корне проекта
+
+Если изменить DocumentRoot нельзя (типично для бесплатных хостингов), корневой `.htaccess` сам закрывает служебные каталоги и проксирует запросы в `index.php`:
+
+- `app/`, `storage/`, `views/`, `config.local.php` — `403` для любых файлов;
+- содержимое `runtime/` — `403`, но сам адрес `/runtime` остаётся маршрутом панели (реальный каталог с таким именем иначе перехватывал бы запрос и Apache отдавал бы `403`);
+- `DirectorySlash Off`, чтобы Apache не делал `301 /runtime → /runtime/`;
+- статика из `public/` (например `/assets/css/app.css`) отдаётся напрямую, всё остальное уходит во front controller.
+
+Проверить после загрузки: `/runtime` должен открывать страницу среды, а `/storage/` — отдавать `403`.
+
 ## Структура
 
 ```text
@@ -112,6 +123,7 @@ config.local.php локальные переопределения конфиг�
 - Один администратор; multi-user и роли не предусмотрены.
 - SQLite или MySQL; автоматического переноса данных между драйверами нет.
 - Для запуска Python нужна разрешённая функция запуска процессов и достаточно места в `storage/`.
+- Бесплатные хостинги (infinityfree и подобные) полностью отключают `proc_open`/`exec`/`shell_exec`/`popen`/`system`/`passthru`. На них панель работает, но запустить Python невозможно — ни системный, ни переносной: PHP не может создать процесс. Нужен VPS или хостинг, где эти функции разрешены.
 - Запуск кода происходит от имени пользователя веб-сервера с его правами файловой системы.
 - Максимальный размер загрузки по умолчанию 25 MB, файлов — 300; лимит вывода — 8 MB.
 
@@ -144,7 +156,7 @@ PyHost Engine is a compact PHP admin panel for running Python projects on hosts 
 - Write access to the `storage/` directory.
 - System Python is optional: it can be replaced by the bundled runtime from the "Runtime" page.
 
-It is recommended to point `DocumentRoot` at `public/`. If the host points it at the project root, the root `index.php` acts as the entry point and delegates to the canonical `public/index.php` controller. The root `.htaccess` rules deny access to `app/`, `storage/`, `views/`, `runtime/` and `config.local.php`, and route all non-static requests to the root `index.php`.
+It is recommended to point `DocumentRoot` at `public/`. If the host points it at the project root, the root `index.php` acts as the entry point and delegates to the canonical `public/index.php` controller.
 
 ### Installation
 
@@ -160,6 +172,17 @@ Local development server:
 ```bash
 php -S 127.0.0.1:8765 -t public
 ```
+
+#### Hosts with DocumentRoot at the project root
+
+When `DocumentRoot` cannot be changed (typical for free hosting), the root `.htaccess` protects the internals and proxies requests to `index.php`:
+
+- `app/`, `storage/`, `views/`, `config.local.php` answer `403` for every file;
+- `runtime/` contents answer `403`, but `/runtime` itself stays a panel route — otherwise the real directory with that name swallows the request and Apache answers `403`;
+- `DirectorySlash Off` stops Apache from answering `301 /runtime → /runtime/`;
+- static files under `public/` (for example `/assets/css/app.css`) are served directly, everything else goes to the front controller.
+
+After uploading, verify that `/runtime` opens the runtime page and `/storage/` answers `403`.
 
 ### Layout
 
@@ -231,5 +254,6 @@ On Windows filesystems, diagnostics may report `FAIL` for session directory perm
 - Single administrator; no multi-user support or roles.
 - SQLite or MySQL; there is no automatic data migration between drivers.
 - Running Python requires an available process execution function and enough free space in `storage/`.
+- Free hosts (infinityfree and similar) disable `proc_open`/`exec`/`shell_exec`/`popen`/`system`/`passthru` entirely. The panel still runs there, but Python cannot be started at all — neither system nor portable, because PHP cannot spawn a process. Use a VPS or a host that allows these functions.
 - Code runs with the permissions of the web server user.
 - Default upload limits: 25 MB and 300 files; default output limit: 8 MB.

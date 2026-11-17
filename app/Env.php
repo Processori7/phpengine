@@ -65,7 +65,9 @@ final class Env
             'Запуск процессов',
             $mode ?? 'все функции отключены',
             $mode !== null,
-            'Нужна хотя бы одна функция: proc_open, exec, shell_exec, popen, system или passthru.'
+            $mode === null
+                ? 'Нужна хотя бы одна функция: proc_open, exec, shell_exec, popen, system или passthru. Бесплатные хостинги (infinityfree и подобные) их отключают — Python там запустить нельзя, нужен VPS или хостинг с разрешённым proc_open.'
+                : 'Используется ' . $mode . '; при отключении функции панель не сможет запускать Python.'
         );
 
         $driver = Database::driver();
@@ -85,11 +87,16 @@ final class Env
         );
 
         $runtime = RuntimeManager::status();
+        $runtimeDetail = $runtime['installed']
+            ? ($runtime['can_exec'] ? $runtime['version'] . ' · ' . $runtime['exec_mode'] : 'установлен, но запуск запрещён хостингом')
+            : (!$runtime['supported'] ? 'платформа не поддерживается' : (!$runtime['can_exec'] ? 'запуск процессов запрещён хостингом' : 'не установлен'));
         $checks[] = self::check(
             'Встроенный Python',
-            $runtime['installed'] ? $runtime['version'] . ' · ' . $runtime['exec_mode'] : ($runtime['supported'] ? 'не установлен' : 'платформа не поддерживается'),
-            $runtime['installed'],
-            'Установите переносной Python на странице «Среда выполнения» — он не требует Python на хостинге.'
+            $runtimeDetail,
+            $runtime['installed'] && $runtime['can_exec'],
+            $runtime['can_exec']
+                ? 'Установите переносной Python на странице «Среда выполнения» — он не требует Python на хостинге.'
+                : 'Переносной Python распаковать можно, но запустить его на этом хостинге нельзя: PHP не имеет доступа к процессам.'
         );
 
         $python = self::python();
@@ -148,17 +155,25 @@ final class Env
 
     private static function storageExposed(): bool
     {
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $url = $scheme . '://' . $host . '/storage/';
-        $ctx = stream_context_create(['http' => ['timeout' => 2, 'method' => 'HEAD', 'ignore_errors' => true]]);
-        $headers = @get_headers($url, true, $ctx);
-        if (!is_array($headers)) return false;
-        $status = 0;
-        foreach ($headers as $k => $v) {
-            if (is_int($k) && preg_match('/(\d{3})/', (string) $v, $m)) { $status = (int) $m[1]; break; }
+        $storage = (string) Config::get('storage');
+        $name = 'probe-' . bin2hex(random_bytes(8)) . '.txt';
+        $marker = bin2hex(random_bytes(16));
+        $path = $storage . '/' . $name;
+        if (@file_put_contents($path, $marker) === false) return false;
+        try {
+            $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/index.php')), '/');
+            $url = ($https ? 'https' : 'http') . '://' . $host . ($base === '' ? '' : $base) . '/storage/' . $name;
+            $ctx = stream_context_create(['http' => ['timeout' => 3, 'method' => 'GET', 'ignore_errors' => true]]);
+            $body = @file_get_contents($url, false, $ctx);
+            // The random marker proves the file was really served. Status codes alone
+            // lie here: anti-bot interstitials and custom 404 pages also answer 200.
+            return is_string($body) && str_contains($body, $marker);
+        } finally {
+            @unlink($path);
         }
-        return $status >= 200 && $status < 400;
     }
 
     private static function check(string $name, string $detail, bool $ok, string $hint): array

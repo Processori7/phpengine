@@ -1,4 +1,8 @@
 Options -Indexes
+DirectoryIndex index.php
+# mod_dir would answer 301 /runtime -> /runtime/ before the rewrite below runs,
+# and the real directory then has no index file (403). Keep URLs verbatim.
+DirectorySlash Off
 RewriteEngine On
 RewriteBase /
 
@@ -12,7 +16,12 @@ RewriteBase /
   Header unset Server
 </IfModule>
 
-RewriteRule ^(app|storage|views|runtime|config\.local\.php) - [F,L]
+RewriteRule ^(app|storage|views|config\.local\.php)(/|$) - [F,L]
+
+# /runtime is both a real directory and an app route. Without these two rules the
+# "-d" check below serves the directory and Apache answers 403 (no index file).
+RewriteRule ^runtime/?$ index.php [QSA,L]
+RewriteRule ^runtime/.+ - [F,L]
 
 # Static files live in public/ but the host may point DocumentRoot at the project root.
 RewriteCond %{REQUEST_URI} !^/public/

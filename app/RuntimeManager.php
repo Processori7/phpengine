@@ -14,8 +14,7 @@ final class RuntimeManager
 
     public static function platform(): ?string
     {
-        $rawMachine = php_uname('m');
-        $machine = strtolower(trim(is_string($rawMachine) ? $rawMachine : ''));
+        $machine = self::machine();
         $family = PHP_OS_FAMILY;
 
         if ($family === 'Windows') {
@@ -42,6 +41,30 @@ final class RuntimeManager
             default            => null,
         };
         return $arch;
+    }
+
+    /**
+     * CPU architecture. php_uname() is disabled on some shared hosts (it returns
+     * false there), so fall back to the process environment and word size instead
+     * of reporting the platform as unsupported.
+     */
+    private static function machine(): string
+    {
+        $raw = php_uname('m');
+        $machine = strtolower(trim(is_string($raw) ? $raw : ''));
+        if ($machine !== '') return $machine;
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $env = strtolower(trim((string) getenv('PROCESSOR_ARCHITECTURE')));
+            return match ($env) {
+                'amd64', 'x86_64' => 'x86_64',
+                'arm64'           => 'aarch64',
+                'x86'             => 'i686',
+                default           => PHP_INT_SIZE === 8 ? 'x86_64' : 'i686',
+            };
+        }
+        // Every mainstream 64-bit Linux target is x86_64 unless php_uname() says otherwise.
+        return PHP_INT_SIZE === 8 ? 'x86_64' : 'i686';
     }
 
     public static function assetName(): ?string
