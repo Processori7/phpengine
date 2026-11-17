@@ -219,6 +219,7 @@ final class App
             'twofaSecret' => $secret,
             'twofaUri' => $secret !== '' ? TOTP::provisioningUri($secret, 'PyHostEngine:' . ($user['username'] ?? 'admin')) : '',
             'twofaEnabled' => !empty($user['totp_enabled']),
+            'db' => Database::connectionForForm(),
         ]);
     }
 
@@ -474,6 +475,35 @@ final class App
     private static function settingsPost(): void
     {
         Security::requireCsrf();
+
+        if (!empty($_POST['db_config'])) {
+            try {
+                $cfg = self::dbConfigFromPost();
+                $res = Database::testConnection($cfg);
+                if (!$res['ok']) {
+                    self::flash('error', 'Проверка подключения не прошла: ' . $res['message']);
+                    self::redirect('/settings');
+                }
+                if (!empty($_POST['db_save'])) {
+                    Database::saveConnection($cfg);
+                    $detail = $cfg['driver'] === 'mysql'
+                        ? 'mysql: ' . $cfg['host'] . '/' . $cfg['name']
+                        : 'sqlite: ' . Database::connectionForForm()['path'];
+                    Security::audit('db_config_updated', $detail);
+                    self::flash(
+                        'success',
+                        'Настройки БД сохранены. Новое подключение начнёт работать со следующего запроса. '
+                        . 'При смене драйвера данные не переносятся — создайте администратора заново.'
+                    );
+                } else {
+                    self::flash('success', $res['message']);
+                }
+            } catch (Throwable $e) {
+                self::flash('error', 'Ошибка настроек БД: ' . $e->getMessage());
+            }
+            self::redirect('/settings');
+        }
+
         if (!empty($_POST['twofa_action'])) {
             $action = (string) $_POST['twofa_action'];
             try {
@@ -627,6 +657,26 @@ final class App
     }
 
     /* ---------- Utilities ---------- */
+
+    private static function dbConfigFromPost(): array
+    {
+        $current = Database::connection();
+        $driver = (string) ($_POST['db_driver'] ?? $current['driver']);
+        $driver = in_array($driver, ['sqlite', 'mysql'], true) ? $driver : 'sqlite';
+        $pass = (string) ($_POST['db_pass'] ?? '');
+        if ($pass === '') $pass = (string) ($current['pass'] ?? '');
+        $charset = (string) ($_POST['db_charset'] ?? $current['charset']);
+        return [
+            'driver'  => $driver,
+            'path'    => trim((string) ($_POST['db_sqlite_path'] ?? $current['path'])),
+            'host'    => trim((string) ($_POST['db_host'] ?? $current['host'])),
+            'port'    => (int) ($_POST['db_port'] ?? $current['port']),
+            'name'    => trim((string) ($_POST['db_name'] ?? $current['name'])),
+            'user'    => trim((string) ($_POST['db_user'] ?? $current['user'])),
+            'pass'    => $pass,
+            'charset' => $charset,
+        ];
+    }
 
     private static function requireExecutionAccess(): void
     {

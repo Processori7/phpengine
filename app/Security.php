@@ -107,30 +107,31 @@ final class Security
         }
     }
 
-    /** Fixed-window rate limiter backed by SQLite. */
+    /** Fixed-window rate limiter backed by the configured database. */
     public static function rateLimit(string $key, int $limit, int $window): bool
     {
         if (random_int(1, 100) === 1) {
             Database::run('DELETE FROM rate_limits WHERE reset_at < ?', [time() - 86400]);
         }
         $now  = time();
-        $row  = Database::one('SELECT hits, reset_at FROM rate_limits WHERE key = ?', [$key]);
+        $k    = Database::q('key');
+        $row  = Database::one('SELECT hits, reset_at FROM rate_limits WHERE ' . $k . ' = ?', [$key]);
         if ($row !== null && (int) $row['reset_at'] <= $now) {
-            Database::run('DELETE FROM rate_limits WHERE key = ?', [$key]);
+            Database::run('DELETE FROM rate_limits WHERE ' . $k . ' = ?', [$key]);
             $row = null;
         }
         if ($row === null) {
-            Database::run(
-                'INSERT INTO rate_limits(key, hits, reset_at) VALUES (?, 1, ?)
-                 ON CONFLICT(key) DO UPDATE SET hits = 1, reset_at = excluded.reset_at',
-                [$key, $now + $window]
-            );
+            Database::upsert('rate_limits', [
+                'key'     => $key,
+                'hits'    => 1,
+                'reset_at'=> $now + $window,
+            ], 'key');
             return true;
         }
         if ((int) $row['hits'] >= $limit) {
             return false;
         }
-        Database::run('UPDATE rate_limits SET hits = hits + 1 WHERE key = ?', [$key]);
+        Database::run('UPDATE rate_limits SET hits = hits + 1 WHERE ' . $k . ' = ?', [$key]);
         return true;
     }
 

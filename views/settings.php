@@ -66,6 +66,48 @@
 
   <div>
     <section class="card">
+      <h2>Подключение к базе данных</h2>
+      <p class="muted" style="font-size:13px;margin-top:0">Сейчас используется: <?= e($db['driver'] === 'mysql' ? 'MySQL · ' . $db['host'] . '/' . $db['name'] : 'SQLite · ' . basename($db['path'])) ?>.</p>
+      <form method="post" action="/settings">
+        <?= csrfField() ?>
+        <input type="hidden" name="db_config" value="1">
+        <div class="field">
+          <label for="db_driver">Движок базы данных</label>
+          <select id="db_driver" name="db_driver">
+            <option value="sqlite" <?= $db['driver'] === 'sqlite' ? 'selected' : '' ?>>SQLite (файл)</option>
+            <option value="mysql" <?= $db['driver'] === 'mysql' ? 'selected' : '' ?>>MySQL (удалённый сервер)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="db_sqlite_path">Файл SQLite (используется для SQLite)</label>
+          <input id="db_sqlite_path" name="db_sqlite_path" type="text" class="mono" value="<?= e($db['path']) ?>">
+        </div>
+        <div class="grid cols-2" style="margin-top:14px">
+          <div class="field"><label>Хост MySQL</label><input name="db_host" type="text" class="mono" value="<?= e($db['host']) ?>" placeholder="127.0.0.1"></div>
+          <div class="field"><label>Порт MySQL</label><input name="db_port" type="number" min="1" max="65535" value="<?= (int) $db['port'] ?>"></div>
+          <div class="field"><label>Имя базы</label><input name="db_name" type="text" class="mono" value="<?= e($db['name']) ?>"></div>
+          <div class="field"><label>Пользователь</label><input name="db_user" type="text" class="mono" value="<?= e($db['user']) ?>"></div>
+          <div class="field"><label>Кодировка</label>
+            <select name="db_charset">
+              <?php foreach (['utf8mb4', 'utf8', 'latin1'] as $cs): ?>
+                <option value="<?= e($cs) ?>" <?= $db['charset'] === $cs ? 'selected' : '' ?>><?= e($cs) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="db_pass">Пароль MySQL</label>
+          <input id="db_pass" name="db_pass" type="password" autocomplete="off" class="mono" placeholder="<?= !empty($db['password_set']) ? 'установлен — оставьте пустым' : 'пароль пользователя БД' ?>">
+        </div>
+        <div class="row">
+          <button class="btn primary" type="submit" name="db_save" value="1">Сохранить</button>
+          <button class="btn" type="submit" name="db_test" value="1">Проверить подключение</button>
+        </div>
+      </form>
+      <p class="muted" style="font-size:12px;margin:12px 0 0">Пароль хранится в зашифрованном виде. Перед сохранением подключение проверяется. При смене драйвера данные не переносятся: после переключения на пустую базу потребуется заново выполнить установку администратора.</p>
+    </section>
+
+    <section class="card">
       <h2>Смена пароля</h2>
       <form method="post" action="/settings">
         <?= csrfField() ?>

@@ -34,12 +34,13 @@ final class VenvManager
         $tokens = array_merge($python['cmd'], ['-m', 'venv', $path]);
         $result = Runner::execute($tokens, (string) Config::get('root'), [], 300, $log);
 
-        Database::run(
-            'INSERT INTO venvs(project_id, path, python_bin, status, created_at) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT(project_id) DO UPDATE SET path=excluded.path, python_bin=excluded.python_bin,
-                status=excluded.status, created_at=excluded.created_at',
-            [$project['id'], $path, $python['bin'], $result['status'] === 'success' ? 'ready' : 'failed', time()]
-        );
+        Database::upsert('venvs', [
+            'project_id' => $project['id'],
+            'path'       => $path,
+            'python_bin' => $python['bin'],
+            'status'     => $result['status'] === 'success' ? 'ready' : 'failed',
+            'created_at' => time(),
+        ], 'project_id');
         Security::audit('venv_created', $project['name'] . ' -> ' . $result['status']);
         Telegram::notify('venv', '🧪 venv проекта <b>' . Security::e($project['name']) . '</b>: ' . $result['status']);
         return [

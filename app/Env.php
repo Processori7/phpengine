@@ -68,8 +68,12 @@ final class Env
             'Нужна хотя бы одна функция: proc_open, exec, shell_exec, popen, system или passthru.'
         );
 
-        $pdo = class_exists('PDO') && in_array('sqlite', PDO::getAvailableDrivers(), true);
-        $checks[] = self::check('PDO SQLite', $pdo ? 'доступен' : 'отсутствует', $pdo, 'База данных: storage/db/engine.sqlite.');
+        $driver = Database::driver();
+        $cfg = Database::connectionForForm();
+        $pdo = class_exists('PDO') && in_array($driver, PDO::getAvailableDrivers(), true);
+        $dbLabel = $driver === 'mysql' ? 'PDO MySQL' : 'PDO SQLite';
+        $dbDetail = $driver === 'mysql' ? 'MySQL · ' . ($cfg['host'] ?? '') . '/' . ($cfg['name'] ?? '') : 'SQLite · ' . basename((string) ($cfg['path'] ?? ''));
+        $checks[] = self::check($dbLabel, $pdo ? 'доступен · ' . $dbDetail : 'отсутствует', $pdo, 'Драйвер БД выбирается в настройках.');
 
         $zip = class_exists('ZipArchive');
         $unzip = self::commandExists('unzip');
