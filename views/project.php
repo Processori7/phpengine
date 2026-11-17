@@ -118,6 +118,46 @@
   <?php endif; ?>
 </section>
 
+<?php
+$siteDir = null;
+foreach (['public', 'www', 'site'] as $cand) {
+    if (is_dir($project['dir'] . '/' . $cand)) { $siteDir = $cand; break; }
+}
+$cgiEntry = null;
+foreach (['app.py', 'wsgi.py', 'cgi.py'] as $cand) {
+    if (is_file($project['dir'] . '/' . $cand)) { $cgiEntry = $cand; break; }
+}
+if ($cgiEntry === null && is_file($project['dir'] . '/' . $project['entrypoint'])) {
+    $cgiEntry = (string) $project['entrypoint'];
+}
+$siteOn = (bool) Config::get('security.site_enabled', true);
+$cgiOn  = (bool) Config::get('security.cgi_enabled', false);
+?>
+<section class="card" id="public">
+  <div class="card head">
+    <h2>Публичный адрес</h2>
+    <div class="row">
+      <span class="badge <?= $siteOn ? 'ok' : 'warn' ?>">сайт <?= $siteOn ? 'вкл' : 'выкл' ?></span>
+      <span class="badge <?= $cgiOn ? 'ok' : 'warn' ?>">CGI <?= $cgiOn ? 'вкл' : 'выкл' ?></span>
+    </div>
+  </div>
+  <p class="muted" style="font-size:13px;margin-top:0">Эти адреса открываются без входа в панель — их видят посетители. Переключатели живут в <a href="/settings">настройках</a>.</p>
+  <table>
+    <tbody>
+      <tr>
+        <td style="width:150px"><strong>Сайт</strong></td>
+        <td class="mono"><a href="/site/<?= e($project['slug']) ?>/" target="_blank" rel="noopener">/site/<?= e($project['slug']) ?>/</a></td>
+        <td class="muted"><?= $siteDir !== null ? 'каталог ' . e($siteDir) : 'index.html в корне проекта' ?></td>
+      </tr>
+      <tr>
+        <td><strong>CGI</strong></td>
+        <td class="mono"><a href="/cgi/<?= e($project['slug']) ?>/" target="_blank" rel="noopener">/cgi/<?= e($project['slug']) ?>/</a></td>
+        <td class="muted"><?= $cgiEntry !== null ? e($cgiEntry) : 'нет app.py / wsgi.py / cgi.py' ?></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="card" id="log">
   <div class="card head">
     <h2>Лог выполнения <?= $run ? '· запуск #' . (int) $run['id'] : '' ?></h2>

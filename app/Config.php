@@ -64,6 +64,11 @@ final class Config
                 // Extra hosts the browser runtime may call, comma separated, e.g.
                 // "https://api.example.com". The target must allow CORS.
                 'pyodide_connect_hosts' => '',
+                // Public surface: /site/{project} serves static files (no process),
+                // /cgi/{project} runs the entry point per request (needs proc_open).
+                'site_enabled'       => true,
+                'cgi_enabled'        => false,
+                'cgi_rpm'            => 60,
             ],
             'telegram' => [
                 'enabled'    => false,

@@ -58,8 +58,12 @@ final class Process
 
     /**
      * Run a command without proc_open. Returns [code, out, mode, timedOut].
+     *
+     * $stdin is only honoured in proc_open mode — the shell-based fallbacks have
+     * no portable way to feed a child's stdin, so callers that need a body must
+     * check Process::mode() first (WebApp::runCgi does exactly that).
      */
-    public static function execute(array $cmd, ?string $cwd, array $env, int $timeout, int $maxBytes): array
+    public static function execute(array $cmd, ?string $cwd, array $env, int $timeout, int $maxBytes, ?string $stdin = null): array
     {
         $mode = self::mode();
         if ($mode === null) {
@@ -73,7 +77,7 @@ final class Process
             ];
         }
         if ($mode === 'proc_open') {
-            $res = Runner::capture($cmd, $cwd, $env, $timeout);
+            $res = Runner::capture($cmd, $cwd, $env, $timeout, $stdin);
             return [
                 'code' => $res['code'],
                 'out'  => mb_strcut($res['out'], 0, $maxBytes),

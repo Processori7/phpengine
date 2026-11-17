@@ -11,6 +11,7 @@
 - Создание виртуального окружения, установка зависимостей из `requirements.txt`, установка отдельных пакетов.
 - Запуск команд `python`, `pip`, `pytest`, `uv` с аргументами. Полный лог stdout/stderr, код возврата и история запусков.
 - **Запуск в браузере (Pyodide)**: CPython в WebAssembly выполняет код проекта прямо в браузере посетителя. Не требует `proc_open` и работает даже на бесплатном хостинге, где процессы запрещены.
+- **Публичные адреса проекта**: `/site/{slug}/` отдаёт статический сайт из `public/` (без процессов, работает везде), `/cgi/{slug}/` запускает Python-бэкенд по CGI на каждый запрос (нужен `proc_open`).
 - Установка переносного Python 3.12 из `astral-sh/python-build-standalone` с обязательной проверкой SHA256 из официального `SHA256SUMS`. Если хост не умеет скачивать, архив можно загрузить вручную.
 - Выбор драйвера базы данных (SQLite или MySQL) и его настроек прямо в админке, с проверкой подключения перед сохранением.
 - Настройки безопасности, лимитов, пути входа, пути к Python, белого списка IP и Telegram-уведомлений.
@@ -81,6 +82,7 @@ config.local.php локальные переопределения конфиг�
 - привязка сессии к User-Agent и IP, скрытие `X-Powered-By`;
 - попытки входа до блокировки и длительность блокировки;
 - общий лимит запросов, лимит запусков, таймаут запуска и лимит вывода;
+- публичный сайт проекта, CGI-мост и его лимит запросов в минуту;
 - срок жизни remember-cookie, таймаут неактивности и ротация ID сессии;
 - белый список IP;
 - смена пароля и управление TOTP 2FA;
@@ -172,6 +174,42 @@ journalctl -u pyhost-bot -f
 
 Старый способ задать SQLite-файл через `config.local.php` тоже работает как значение по умолчанию, но сохранённые в админке настройки имеют приоритет. Через `config.local.php` по-прежнему можно переопределить пути `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` и `max_files`.
 
+### Сайт и CGI-мост (публичные адреса)
+
+У проекта два публичных адреса. Они открываются без входа в панель — это витрина для посетителей, а не админка.
+
+**`/site/{slug}/` — статический сайт.** Панель отдаёт файлы из `public/` (или `www/`, `site/`, а если таких каталогов нет — из корня проекта). PHP только читает файлы, процессов не требуется, поэтому режим работает на любом хостинге, включая infinityfree.
+
+- `index.html` отдаётся для `/site/{slug}/` и для любого каталога с завершающим слешем;
+- каталог без слеша получает `301` на вариант со слешем, как у обычного веб-сервера;
+- отдаются только безопасные расширения (html, css, js, json, svg, картинки, шрифты, wasm, pdf, медиа). `.php`, `.py`, `.env`, `.git` и всё остальное — `404`;
+- запросы с `..` и к скрытым файлам отсекаются до обращения к диску, итоговый путь дополнительно проверяется через `realpath` внутри каталога сайта;
+- заголовки защиты панели (CSP, `X-Frame-Options`, COOP/CORP) для этих ответов снимаются — иначе сайт не смог бы использовать свои inline-скрипты и встраиваться в iframe. `X-Content-Type-Options: nosniff` остаётся.
+
+**`/cgi/{slug}/…` — Python-бэкенд по CGI.** Точка входа (`app.py`, `wsgi.py`, `cgi.py` или entrypoint проекта) запускается на каждый запрос: параметры приходят в переменных окружения (`REQUEST_METHOD`, `PATH_INFO`, `QUERY_STRING`, `CONTENT_TYPE`, `CONTENT_LENGTH`, все `HTTP_*`), тело — в stdin. Скрипт отвечает заголовками, пустой строкой и телом:
+
+```python
+import os, sys
+
+body = sys.stdin.read()
+payload = f"<h1>{os.environ['REQUEST_METHOD']} {os.environ['PATH_INFO']}</h1><pre>{body}</pre>"
+
+sys.stdout.write("Status: 200 OK\r\n")
+sys.stdout.write("Content-Type: text/html; charset=utf-8\r\n")
+sys.stdout.write("\r\n")
+sys.stdout.write(payload)
+```
+
+Что делает панель:
+
+- проверяет `security.cgi_enabled`, `security.execution_enabled` и наличие `proc_open` — без него CGI отвечает `503` с объяснением, а статический сайт продолжает работать;
+- ограничивает частоту отдельным счётчиком `security.cgi_rpm` (по умолчанию 60 запросов в минуту с IP);
+- передаёт тело запроса в stdin потоком, поэтому большие POST не упираются в буфер канала;
+- разбирает `Status:` и заголовки, выбрасывает `Content-Length`/`Connection`/`Transfer-Encoding`, а заголовки защиты панели снимает — CSP и политику кадров задаёт само приложение;
+- если скрипт упал и не выдал заголовки, посетитель получает `500` без трейсбека, а полный вывод пишется в `storage/logs/cgi.log`.
+
+Режим рассчитан на запрос-ответ: держать WebSocket или long polling через CGI нельзя, для этого нужен VPS с процессом (см. выше). Оба адреса включаются в «Настройках» (`security.site_enabled`, `security.cgi_enabled`), ссылки на них есть на странице проекта в блоке «Публичный адрес».
+
 ## Безопасность
 
 - CSRF на все POST-запросы, настраиваемые TTL и ротация токена.
@@ -198,6 +236,7 @@ journalctl -u pyhost-bot -f
 - Для запуска Python нужна разрешённая функция запуска процессов и достаточно места в `storage/`.
 - Бесплатные хостинги (infinityfree и подобные) полностью отключают `proc_open`/`exec`/`shell_exec`/`popen`/`system`/`passthru`. На них панель работает, но запустить Python невозможно — ни системный, ни переносной: PHP не может создать процесс. Нужен VPS или хостинг, где эти функции разрешены.
 - Запуск кода происходит от имени пользователя веб-сервера с его правами файловой системы.
+- Публичный сайт (`/site/…`) работает всегда, а CGI-мост (`/cgi/…`) требует `proc_open` и годится только для схемы запрос-ответ: WebSocket, SSE и long polling через него не поднять.
 - Максимальный размер загрузки по умолчанию 25 MB, файлов — 300; лимит вывода — 8 MB.
 
 ---
@@ -215,6 +254,7 @@ PyHost Engine is a compact PHP admin panel for running Python projects on hosts 
 - Virtual environment creation, dependency installation from `requirements.txt`, and individual package installation.
 - Running `python`, `pip`, `pytest` and `uv` commands with arguments. Full stdout/stderr log, exit code and run history.
 - **Browser execution (Pyodide)**: CPython compiled to WebAssembly runs the project code inside the visitor's browser. No `proc_open` needed, so it works even on free hosts that forbid processes.
+- **Public project URLs**: `/site/{slug}/` serves a static site from `public/` (no processes, works anywhere), `/cgi/{slug}/` runs a Python backend over CGI per request (needs `proc_open`).
 - Installation of portable Python 3.12 from `astral-sh/python-build-standalone` with mandatory SHA256 verification against the official `SHA256SUMS`. If the host cannot download files, the archive can be uploaded manually.
 - Choosing the database driver (SQLite or MySQL) and its settings in the admin UI, with a connection check before saving.
 - Settings for security, limits, login path, Python binary path, IP allowlist and Telegram notifications.
@@ -285,6 +325,7 @@ Available in the UI:
 - session binding to User-Agent and IP, hiding `X-Powered-By`;
 - failed login attempts before lockout and lockout duration;
 - global request rate limit, run rate limit, run timeout and output limit;
+- public project site, CGI bridge and its per-minute request limit;
 - remember-cookie lifetime, session idle timeout and session ID rotation;
 - IP allowlist;
 - password change and TOTP 2FA management;
@@ -376,6 +417,42 @@ Limits: the browser needs access to the jsDelivr CDN, nothing is written back to
 
 Defining the SQLite file through `config.local.php` still works as a default, but settings saved in the admin UI take precedence. `config.local.php` can still override `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` and `max_files`.
 
+### Site and CGI bridge (public URLs)
+
+Every project gets two public URLs. They open without signing in — they are the visitor-facing surface, not the panel.
+
+**`/site/{slug}/` — static site.** The panel serves files from `public/` (or `www/`, `site/`, and the project root if none of those exist). PHP only reads files, no process is involved, so this works on any host including infinityfree.
+
+- `index.html` is served for `/site/{slug}/` and for any directory with a trailing slash;
+- a directory without a slash gets a `301` to the slashed form, like a regular web server;
+- only safe extensions are served (html, css, js, json, svg, images, fonts, wasm, pdf, media). `.php`, `.py`, `.env`, `.git` and everything else answer `404`;
+- `..` and dotfiles are rejected before touching the disk, and the resolved path is re-checked with `realpath` inside the site directory;
+- the panel's hardening headers (CSP, `X-Frame-Options`, COOP/CORP) are dropped for these responses, otherwise the site could not use its own inline scripts or be embedded. `X-Content-Type-Options: nosniff` stays.
+
+**`/cgi/{slug}/…` — Python backend over CGI.** The entry point (`app.py`, `wsgi.py`, `cgi.py` or the project entrypoint) runs once per request: the request arrives in environment variables (`REQUEST_METHOD`, `PATH_INFO`, `QUERY_STRING`, `CONTENT_TYPE`, `CONTENT_LENGTH`, every `HTTP_*`) and on stdin. The script answers with headers, a blank line and a body:
+
+```python
+import os, sys
+
+body = sys.stdin.read()
+payload = f"<h1>{os.environ['REQUEST_METHOD']} {os.environ['PATH_INFO']}</h1><pre>{body}</pre>"
+
+sys.stdout.write("Status: 200 OK\r\n")
+sys.stdout.write("Content-Type: text/html; charset=utf-8\r\n")
+sys.stdout.write("\r\n")
+sys.stdout.write(payload)
+```
+
+What the panel does:
+
+- checks `security.cgi_enabled`, `security.execution_enabled` and the presence of `proc_open` — without it CGI answers `503` with an explanation while the static site keeps working;
+- rate-limits with its own counter `security.cgi_rpm` (60 requests per minute per IP by default);
+- streams the request body into stdin, so large POSTs never block on the pipe buffer;
+- parses `Status:` and the headers, drops `Content-Length`/`Connection`/`Transfer-Encoding`, and removes the panel's hardening headers so the app owns its CSP and frame policy;
+- if the script dies without producing headers, the visitor gets a plain `500` with no traceback while the full output goes to `storage/logs/cgi.log`.
+
+The mode is request/response only: WebSockets and long polling cannot live behind CGI, those need a VPS with a real process (see above). Both URLs are toggled in Settings (`security.site_enabled`, `security.cgi_enabled`) and linked from the project page in the "Public URL" block.
+
 ### Security
 
 - CSRF protection on all POST requests, with configurable TTL and token rotation.
@@ -402,4 +479,5 @@ On Windows filesystems, diagnostics may report `FAIL` for session directory perm
 - Running Python requires an available process execution function and enough free space in `storage/`.
 - Free hosts (infinityfree and similar) disable `proc_open`/`exec`/`shell_exec`/`popen`/`system`/`passthru` entirely. The panel still runs there, but Python cannot be started at all — neither system nor portable, because PHP cannot spawn a process. Use a VPS or a host that allows these functions.
 - Code runs with the permissions of the web server user.
+- A public site (`/site/…`) always works, while the CGI bridge (`/cgi/…`) needs `proc_open` and is request/response only: WebSockets, SSE and long polling cannot run behind it.
 - Default upload limits: 25 MB and 300 files; default output limit: 8 MB.

@@ -22,7 +22,7 @@ set_error_handler(static function (int $severity, string $message, string $file,
     return true;
 });
 
-foreach (['Config', 'SecureStore', 'Database', 'Security', 'Telegram', 'Auth', 'Captcha', 'Process', 'Runner', 'RuntimeManager', 'Env', 'ProjectManager', 'VenvManager', 'TOTP', 'App'] as $class) {
+foreach (['Config', 'SecureStore', 'Database', 'Security', 'Telegram', 'Auth', 'Captcha', 'Process', 'Runner', 'RuntimeManager', 'Env', 'ProjectManager', 'VenvManager', 'TOTP', 'WebApp', 'App'] as $class) {
     require_once __DIR__ . '/../app/' . $class . '.php';
 }
 

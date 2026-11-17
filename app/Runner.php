@@ -4,8 +4,13 @@ declare(strict_types=1);
 /** Safe process execution: no shell, tokenised commands, captured stdout/stderr. */
 final class Runner
 {
-    /** Small helper used for quick probes (python -V, pip list, etc.). */
-    public static function capture(array $cmd, ?string $cwd = null, array $extraEnv = [], int $timeout = 30): array
+    /**
+     * Small helper used for quick probes (python -V, pip list, etc.).
+     *
+     * $stdin is streamed into the child while its output is being drained, so a
+     * CGI request body can be large without deadlocking on a full pipe buffer.
+     */
+    public static function capture(array $cmd, ?string $cwd = null, array $extraEnv = [], int $timeout = 30, ?string $stdin = null): array
     {
         $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
         $pipes = [];
@@ -13,13 +18,38 @@ final class Runner
         if (!is_resource($proc)) {
             return ['code' => 127, 'out' => 'Не удалось запустить процесс.'];
         }
-        fclose($pipes[0]);
+
+        $input  = (string) $stdin;
+        $sent   = 0;
+        $total  = strlen($input);
+        if ($total === 0) {
+            fclose($pipes[0]);
+            $pipes[0] = null;
+        } else {
+            stream_set_blocking($pipes[0], false);
+        }
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
         $out = '';
         $start = microtime(true);
         while (true) {
+            if ($pipes[0] !== null) {
+                if ($sent < $total) {
+                    $written = @fwrite($pipes[0], substr($input, $sent, 65536));
+                    if ($written === false) {
+                        // The child closed stdin early; stop feeding it.
+                        @fclose($pipes[0]);
+                        $pipes[0] = null;
+                    } else {
+                        $sent += $written;
+                    }
+                }
+                if ($pipes[0] !== null && $sent >= $total) {
+                    @fclose($pipes[0]);
+                    $pipes[0] = null;
+                }
+            }
             $out .= (string) fread($pipes[1], 8192);
             $out .= (string) fread($pipes[2], 8192);
             $status = proc_get_status($proc);
@@ -36,6 +66,9 @@ final class Runner
                 break;
             }
             usleep(20000);
+        }
+        if ($pipes[0] !== null) {
+            @fclose($pipes[0]);
         }
         fclose($pipes[1]);
         fclose($pipes[2]);

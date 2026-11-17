@@ -34,9 +34,14 @@ final class App
         }
         unset($_GET['debug'], $_POST['debug'], $_COOKIE['debug'], $_GET['phpinfo']);
         if (PHP_SAPI !== 'cli-server' && PHP_SAPI !== 'cli') {
-            // Static assets are served directly by the web server.
+            // Static assets are served directly by the web server. Public project
+            // sites and CGI apps get their own budgets, so the panel limiter must
+            // not throttle them (one page load is dozens of requests).
             $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-            if (!str_starts_with($path, '/assets/')) {
+            $ownBudget = str_starts_with($path, '/assets/')
+                || str_starts_with($path, '/site/')
+                || str_starts_with($path, '/cgi/');
+            if (!$ownBudget) {
                 $rpm = max(1, (int) Config::get('security.global_rpm', 120));
                 if (!Security::rateLimit('global:' . Security::clientIp(), $rpm, 60)) {
                     http_response_code(429);
@@ -86,6 +91,17 @@ final class App
         if ($path === '/health') {
             // Public liveness probe only. No versions, no paths, no build info.
             self::json(['ok' => true]);
+            return;
+        }
+
+        // Public surface of a project — served before the auth gate on purpose.
+        $raw = self::rawPath();
+        if (preg_match('#^/site/([A-Za-z0-9_-]{1,64})(/.*)?$#', $raw, $m)) {
+            WebApp::serveStatic($m[1], $m[2] ?? '');
+            return;
+        }
+        if (preg_match('#^/cgi/([A-Za-z0-9_-]{1,64})(/.*)?$#', $raw, $m)) {
+            WebApp::runCgi($m[1], $m[2] ?? '/');
             return;
         }
 
@@ -693,6 +709,8 @@ PY;
             'security.session_bind_ua'   => isset($_POST['session_bind_ua']),
             'security.session_bind_ip'   => isset($_POST['session_bind_ip']),
             'security.hide_server_header'=> isset($_POST['hide_server_header']),
+            'security.site_enabled'      => isset($_POST['site_enabled']),
+            'security.cgi_enabled'       => isset($_POST['cgi_enabled']),
         ];
         foreach ($bools as $key => $value) {
             Database::setSetting($key, $value);
@@ -710,6 +728,7 @@ PY;
             'security.session_rotate'     => [300, 86400],
             'security.login_lockout'      => [60, 86400],
             'security.csrf_ttl'           => [60, 86400],
+            'security.cgi_rpm'            => [1, 600],
         ];
         foreach ($ints as $key => [$min, $max]) {
             $value = (int) ($_POST[str_replace('.', '_', $key)] ?? Config::get($key));
@@ -873,13 +892,19 @@ PY;
 
     private static function path(): string
     {
+        return '/' . trim(self::rawPath(), '/');
+    }
+
+    /** Same as path() but keeps the trailing slash — project sites need it. */
+    private static function rawPath(): string
+    {
         $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
         $script = $_SERVER['SCRIPT_NAME'] ?? '';
         $base = rtrim(str_replace('\\', '/', dirname($script)), '/');
         if ($base !== '' && $base !== '.' && str_starts_with($uri, $base)) {
             $uri = substr($uri, strlen($base));
         }
-        return '/' . trim($uri, '/');
+        return '/' . ltrim($uri, '/');
     }
 
     public static function view(string $name, array $vars = []): void

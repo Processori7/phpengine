@@ -22,6 +22,11 @@
       <label class="check"><input type="checkbox" name="session_bind_ip" value="1" <?= Config::get('security.session_bind_ip', false) ? 'checked' : '' ?>> Привязывать сессию к IP (осторожно с мобильными)</label>
       <label class="check"><input type="checkbox" name="hide_server_header" value="1" <?= Config::get('security.hide_server_header', true) ? 'checked' : '' ?>> Скрывать X-Powered-By</label>
       <label class="check"><input type="checkbox" name="csrf_enabled" value="1" <?= Config::get('security.csrf_enabled', true) ? 'checked' : '' ?>> CSRF-защита (отключать не рекомендуется)</label>
+      <label class="check"><input type="checkbox" name="site_enabled" value="1" <?= Config::get('security.site_enabled', true) ? 'checked' : '' ?>> Публичные сайты проектов — <code class="inline">/site/имя</code></label>
+      <label class="check"><input type="checkbox" name="cgi_enabled" value="1" <?= Config::get('security.cgi_enabled', false) ? 'checked' : '' ?>> CGI-мост к Python — <code class="inline">/cgi/имя</code></label>
+      <?php if (Config::get('security.cgi_enabled', false) && Process::mode() !== 'proc_open'): ?>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">CGI включён, но <code class="inline">proc_open</code> на этом хостинге недоступен — запросы к <code class="inline">/cgi/…</code> будут отвечать 503. Статические сайты работают без процессов.</p>
+      <?php endif; ?>
 
       <div class="grid cols-2" style="margin-top:14px">
         <div class="field"><label>Ротация CSRF</label>
@@ -43,6 +48,7 @@
         <div class="field"><label>Блокировка, сек (900 = 15 мин)</label><input name="security_login_lockout" type="number" min="60" max="86400" value="<?= (int) Config::get('security.login_lockout', 900) ?>"></div>
         <div class="field"><label>Запросов в минуту (IP)</label><input name="security_global_rpm" type="number" min="10" max="1000" value="<?= (int) Config::get('security.global_rpm', 120) ?>"></div>
         <div class="field"><label>Запусков в минуту</label><input name="security_run_rpm" type="number" min="1" max="200" value="<?= (int) Config::get('security.run_rpm', 20) ?>"></div>
+        <div class="field"><label>CGI-запросов в минуту (IP)</label><input name="security_cgi_rpm" type="number" min="1" max="600" value="<?= (int) Config::get('security.cgi_rpm', 60) ?>"></div>
         <div class="field"><label>Жизнь remember-cookie, дней</label><input name="security_remember_days" type="number" min="1" max="90" value="<?= (int) Config::get('security.remember_days', 14) ?>"></div>
         <div class="field"><label>Неактивность сессии, сек</label><input name="security_session_idle" type="number" min="300" max="86400" value="<?= (int) Config::get('security.session_idle', 7200) ?>"></div>
         <div class="field"><label>Ротация ID сессии, сек</label><input name="security_session_rotate" type="number" min="300" max="86400" value="<?= (int) Config::get('security.session_rotate', 1800) ?>"></div>
