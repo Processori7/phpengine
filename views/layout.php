@@ -50,6 +50,9 @@
     </div>
   </div>
 <?php endif; ?>
+<?php foreach (($scripts ?? []) as $src): ?>
+<script src="<?= e($src) ?>" defer></script>
+<?php endforeach; ?>
 <script src="/assets/js/app.js" defer></script>
 </body>
 </html>

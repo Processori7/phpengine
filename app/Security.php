@@ -10,6 +10,24 @@ final class Security
         'css', 'js', 'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico', 'pdf', 'lock',
     ];
 
+    /**
+     * Re-issues the CSP for pages that must load Pyodide (CPython compiled to
+     * WebAssembly) from a CDN. Everything else keeps the strict default policy.
+     */
+    public static function cspAllowCdn(string $cdn): void
+    {
+        // A trailing slash matters: without it the CSP path matches only exactly
+        // "/pyodide" instead of being a prefix of "/pyodide/v0.29.5/full/...".
+        $cdn = rtrim($cdn, '/') . '/';
+        header(
+            "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+            . "form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; "
+            . "img-src 'self' data:; worker-src 'self' blob:; "
+            . "script-src 'self' 'wasm-unsafe-eval' blob: " . $cdn . '; '
+            . "connect-src 'self' blob: " . $cdn
+        );
+    }
+
     public static function setHeaders(): void
     {
         header("Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; connect-src 'self'");

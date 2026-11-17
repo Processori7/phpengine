@@ -8,6 +8,11 @@ final class App
     {
         date_default_timezone_set((string) Config::get('timezone', 'UTC'));
         Config::load();
+        // A leftover ./runtime directory shadows the /runtime route on hosts that
+        // resolve directories before rewrite rules, so move it out of the web root.
+        if (is_dir((string) Config::get('root') . '/runtime')) {
+            RuntimeManager::migrateLegacy();
+        }
         Database::init();
         Config::applySettings(Database::settings());
         Security::setHeaders();
@@ -122,6 +127,14 @@ final class App
             else self::runtimePage();
             return;
         }
+        if (preg_match('#^/projects/(\d+)/browser$#', $path, $m) && $method === 'GET') {
+            self::browserPythonPage((int) $m[1]);
+            return;
+        }
+        if (preg_match('#^/projects/(\d+)/source$#', $path, $m) && $method === 'GET') {
+            self::projectSource((int) $m[1]);
+            return;
+        }
         if ($path === '/security' && $method === 'GET') {
             self::view('security', [
                 'title' => 'Диагностика и безопасность',
@@ -210,6 +223,71 @@ final class App
             'log'      => $run ? self::readLog($run) : '',
             'runs'     => Database::all('SELECT * FROM runs WHERE project_id = ? ORDER BY id DESC LIMIT 20', [$id]),
             'python'   => Env::python(),
+        ]);
+    }
+
+    /**
+     * Browser-side runner: Pyodide is CPython compiled to WebAssembly, so the code
+     * executes inside the visitor's browser. It needs no process on the host, which
+     * makes it the only way to run Python on hosts that disable proc_open/exec.
+     */
+    private static function browserPythonPage(int $id): void
+    {
+        $project = ProjectManager::find($id);
+        if ($project === null) self::notFound();
+        if (!Config::get('security.browser_python', true)) {
+            self::flash('error', 'Браузерный запуск отключён в настройках.');
+            self::redirect('/projects/' . $id);
+        }
+        $entry = (string) $project['entrypoint'];
+        Security::cspAllowCdn((string) Config::get('security.pyodide_cdn'));
+        self::view('browser-python', [
+            'title'   => 'Браузер: ' . $project['name'],
+            'project' => $project,
+            'entry'   => $entry,
+            'code'    => $entry !== '' ? (ProjectManager::read($project, $entry) ?? '') : '',
+            'indexUrl' => self::pyodideIndexUrl(),
+            'scripts' => ['/assets/js/browser-python.js'],
+        ]);
+    }
+
+    private static function pyodideIndexUrl(): string
+    {
+        return rtrim((string) Config::get('security.pyodide_cdn'), '/')
+            . '/v' . (string) Config::get('security.pyodide_version') . '/full/';
+    }
+
+    /** Text-only source bundle for the browser runner (the VM lives in the browser). */
+    private static function projectSource(int $id): void
+    {
+        $project = ProjectManager::find($id);
+        if ($project === null) self::json(['error' => 'not found'], 404);
+        if (!Config::get('security.browser_python', true)) self::json(['error' => 'disabled'], 403);
+        $allowed = ['py', 'pyw', 'txt', 'md', 'json', 'jsonl', 'csv', 'tsv', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'sql', 'html', 'htm', 'css', 'js'];
+        $files = [];
+        $total = 0;
+        $skipped = 0;
+        foreach (ProjectManager::files($project) as $file) {
+            $rel = (string) $file['path'];
+            if (!in_array(strtolower(pathinfo($rel, PATHINFO_EXTENSION)), $allowed, true)
+                || (int) $file['size'] > 524288
+                || $total > 4194304) {
+                $skipped++;
+                continue;
+            }
+            $content = ProjectManager::read($project, $rel);
+            if ($content === null) {
+                $skipped++;
+                continue;
+            }
+            $total += strlen($content);
+            $files[] = ['path' => $rel, 'content' => $content];
+        }
+        self::json([
+            'entry'   => (string) $project['entrypoint'],
+            'files'   => $files,
+            'skipped' => $skipped,
+            'bytes'   => $total,
         ]);
     }
 

@@ -24,6 +24,9 @@ final class Config
             'projects'  => $root . '/storage/projects',
             'venvs'     => $root . '/storage/venvs',
             'logs'      => $root . '/storage/logs',
+            // Portable CPython lives under storage/ on purpose: a top-level
+            // "runtime" directory in the web root shadows the /runtime route.
+            'runtime'   => $root . '/storage/runtime',
             'timezone'  => 'UTC',
             'security'  => [
                 'session_name'       => 'PYHOSTSESSID',
@@ -54,6 +57,10 @@ final class Config
                 'max_output'         => 8388608,    // 8 MB
                 'run_timeout'        => 120,
                 'python_binary'      => '',         // empty = auto-detect
+                // Pyodide runs CPython in the browser (WASM): no server process needed.
+                'browser_python'     => true,
+                'pyodide_version'    => '0.29.5',
+                'pyodide_cdn'        => 'https://cdn.jsdelivr.net/pyodide/',
             ],
             'telegram' => [
                 'enabled'    => false,

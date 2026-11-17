@@ -18,7 +18,7 @@
   </table>
 
   <div class="row" style="margin-top:18px">
-    <?php if (!$status['installed'] && $status['supported'] && Config::get('security.execution_enabled', true)): ?>
+    <?php if (!$status['installed'] && $status['supported'] && $status['can_exec'] && Config::get('security.execution_enabled', true)): ?>
       <form method="post" action="/runtime" data-loading><?= csrfField() ?>
         <input type="hidden" name="action" value="install">
         <button class="btn primary" type="submit">Скачать и установить (~33 МБ)</button>
@@ -33,6 +33,15 @@
   </div>
   <?php if (!$status['supported']): ?>
     <div class="flash error" style="margin-top:14px">Для архитектуры <b><?= e($status['platform']) ?></b> нет готовой сборки. Укажите путь к уже установленному Python на хостинге в <a href="/settings">настройках</a>.</div>
+  <?php endif; ?>
+  <?php if (!$status['can_exec']): ?>
+    <div class="flash error" style="margin-top:14px">
+      Хостинг запрещает запуск процессов (<code class="inline">proc_open</code>, <code class="inline">exec</code>,
+      <code class="inline">shell_exec</code>, <code class="inline">popen</code>, <code class="inline">system</code>,
+      <code class="inline">passthru</code> отключены), поэтому ни системный, ни переносной Python здесь не запустится.
+      Используйте запуск в браузере: откройте проект и нажмите <b>«Запустить в браузере»</b> — там работает
+      CPython в WebAssembly и серверные процессы не нужны.
+    </div>
   <?php endif; ?>
 </section>
 

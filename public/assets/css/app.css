@@ -87,6 +87,7 @@ textarea { resize: vertical; }
 .flash { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid; }
 .flash.success { background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.4); color: #7ee787; }
 .flash.error { background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.4); color: #ff9d96; }
+.flash.info { background: rgba(88,166,255,.08); border-color: rgba(88,166,255,.35); color: var(--text); }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }

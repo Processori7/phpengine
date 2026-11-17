@@ -10,6 +10,7 @@
 - Загрузка проектов: одиночный `.py`-файл, папка с файлами или ZIP-архив. Встроенный редактор файлов.
 - Создание виртуального окружения, установка зависимостей из `requirements.txt`, установка отдельных пакетов.
 - Запуск команд `python`, `pip`, `pytest`, `uv` с аргументами. Полный лог stdout/stderr, код возврата и история запусков.
+- **Запуск в браузере (Pyodide)**: CPython в WebAssembly выполняет код проекта прямо в браузере посетителя. Не требует `proc_open` и работает даже на бесплатном хостинге, где процессы запрещены.
 - Установка переносного Python 3.12 из `astral-sh/python-build-standalone` с обязательной проверкой SHA256 из официального `SHA256SUMS`. Если хост не умеет скачивать, архив можно загрузить вручную.
 - Выбор драйвера базы данных (SQLite или MySQL) и его настроек прямо в админке, с проверкой подключения перед сохранением.
 - Настройки безопасности, лимитов, пути входа, пути к Python, белого списка IP и Telegram-уведомлений.
@@ -60,8 +61,8 @@ index.php        корневая точка входа для хостинга 
 public/          front controller, CSS/JS, единственный публичный каталог
 app/             классы: роутинг, авторизация, БД, процессы, рантайм, безопасность
 views/           шаблоны интерфейса
-storage/         БД, сессии, проекты, venv, логи и кэш — не должен быть доступен извне
-runtime/         переносной Python, устанавливается из админки
+storage/         БД, сессии, проекты, venv, логи, переносной Python — не должен быть доступен извне
+runtime/         устаревшее место переносного Python (переносится в storage/runtime автоматически)
 config.local.php локальные переопределения конфигурации (создаётся при необходимости)
 ```
 
@@ -96,6 +97,19 @@ config.local.php локальные переопределения конфиг�
 - Если `connection.json` скопирован с Windows, путь вида `C:\...` на Linux игнорируется и заменяется на `storage/db/engine.sqlite` — иначе на хостинге создалась бы пустая база с именем `C:`.
 
 **Важно:** переключение драйвера не переносит данные. Если перейти с SQLite на пустую MySQL-базу, администратора и проекты нужно создать заново — движок покажет `/install`.
+
+### Запуск в браузере (без процессов)
+
+Кнопка «Запустить в браузере» на странице проекта открывает `/projects/{id}/browser`. Код исполняется в браузере посетителя через Pyodide — CPython, скомпилированный в WebAssembly. Серверные `proc_open`/`exec` при этом не используются вообще, поэтому режим работает даже на хостингах, где запуск процессов запрещён (infinityfree и подобные).
+
+Как это устроено:
+
+- файлы проекта (только текст, до 512 КБ на файл) отдаёт JSON-эндпоинт `/projects/{id}/source`;
+- они монтируются в виртуальную файловую систему Pyodide в `/project`, точка входа запускается через `runpy`;
+- `stdout`/`stderr` перехватываются и печатаются в консоль панели;
+- чистые Python-пакеты ставятся в браузер через `micropip` (поле «Пакеты»).
+
+Ограничения режима: нужен доступ браузера к CDN jsDelivr, пакеты с C-расширениями работают только при наличии сборки WebAssembly, файлы на сервер не записываются, а переменные окружения и секреты хостинга недоступны. Версия Pyodide задаётся в конфигурации (`security.pyodide_version`), включение режима — `security.browser_python`.
 
 Старый способ задать SQLite-файл через `config.local.php` тоже работает как значение по умолчанию, но сохранённые в админке настройки имеют приоритет. Через `config.local.php` по-прежнему можно переопределить пути `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` и `max_files`.
 
@@ -141,6 +155,7 @@ PyHost Engine is a compact PHP admin panel for running Python projects on hosts 
 - Project uploads: a single `.py` file, a folder of files, or a ZIP archive. Built-in file editor.
 - Virtual environment creation, dependency installation from `requirements.txt`, and individual package installation.
 - Running `python`, `pip`, `pytest` and `uv` commands with arguments. Full stdout/stderr log, exit code and run history.
+- **Browser execution (Pyodide)**: CPython compiled to WebAssembly runs the project code inside the visitor's browser. No `proc_open` needed, so it works even on free hosts that forbid processes.
 - Installation of portable Python 3.12 from `astral-sh/python-build-standalone` with mandatory SHA256 verification against the official `SHA256SUMS`. If the host cannot download files, the archive can be uploaded manually.
 - Choosing the database driver (SQLite or MySQL) and its settings in the admin UI, with a connection check before saving.
 - Settings for security, limits, login path, Python binary path, IP allowlist and Telegram notifications.
@@ -191,8 +206,8 @@ index.php        root entry point for hosts with DocumentRoot at the project roo
 public/          front controller, CSS/JS, the only public directory
 app/             classes: routing, auth, database, processes, runtime, security
 views/           UI templates
-storage/         database, sessions, projects, venvs, logs and cache — must not be public
-runtime/         portable Python installed from the admin UI
+storage/         database, sessions, projects, venvs, logs and the portable Python — must not be public
+runtime/         legacy location of the portable Python (migrated to storage/runtime automatically)
 config.local.php local config overrides (create when needed)
 ```
 
@@ -227,6 +242,19 @@ The driver and connection parameters are selected on the "Settings" page under "
 - If `connection.json` was copied from Windows, a `C:\...` path is ignored on Linux and replaced with `storage/db/engine.sqlite` — otherwise an empty database named `C:` would be created on the host.
 
 **Important:** switching drivers does not migrate data. Moving from SQLite to an empty MySQL database means creating the administrator and projects again — the engine will show `/install`.
+
+#### Browser execution (no processes)
+
+The "Run in browser" button on a project page opens `/projects/{id}/browser`. Code runs inside the visitor's browser through Pyodide — CPython compiled to WebAssembly. Server-side `proc_open`/`exec` are not used at all, so this mode works even where process execution is forbidden (infinityfree and similar).
+
+How it works:
+
+- the `/projects/{id}/source` JSON endpoint serves the project files (text only, 512 KB per file);
+- they are mounted into the Pyodide virtual filesystem at `/project` and the entry point runs through `runpy`;
+- `stdout`/`stderr` are captured and printed into the panel console;
+- pure-Python packages are installed in the browser with `micropip` (the "Packages" field).
+
+Limits: the browser needs access to the jsDelivr CDN, packages with C extensions only work when a WebAssembly build exists, nothing is written back to the server, and host environment variables/secrets are unavailable. The Pyodide version is set by `security.pyodide_version`; the mode is toggled by `security.browser_python`.
 
 Defining the SQLite file through `config.local.php` still works as a default, but settings saved in the admin UI take precedence. `config.local.php` can still override `storage`, `projects`, `venvs`, `logs`, `sessions`, `timezone`, `session_name`, `max_upload` and `max_files`.
 

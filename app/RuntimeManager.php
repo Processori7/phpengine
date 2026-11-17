@@ -77,7 +77,23 @@ final class RuntimeManager
 
     public static function directory(): string
     {
-        return (string) Config::get('root') . '/runtime/python/' . (self::platform() ?? 'unknown');
+        self::migrateLegacy();
+        return (string) Config::get('runtime') . '/python/' . (self::platform() ?? 'unknown');
+    }
+
+    /**
+     * Older builds kept the interpreter in ./runtime/python. That directory sits in
+     * the web root, where a real "runtime" folder shadows the /runtime route, so the
+     * interpreter now lives under storage/. Move an existing install once.
+     */
+    public static function migrateLegacy(): void
+    {
+        $legacy = (string) Config::get('root') . '/runtime/python';
+        $current = (string) Config::get('runtime') . '/python';
+        if ($legacy === $current || !is_dir($legacy) || is_dir($current)) return;
+        if (!is_dir(dirname($current))) @mkdir(dirname($current), 0775, true);
+        @rename($legacy, $current);
+        @rmdir((string) Config::get('root') . '/runtime');
     }
 
     public static function binary(): string
@@ -203,7 +219,7 @@ final class RuntimeManager
 
     public static function remove(): void
     {
-        $base = realpath((string) Config::get('root') . '/runtime/python');
+        $base = realpath((string) Config::get('runtime') . '/python');
         $target = realpath(self::directory());
         if ($base !== false && $target !== false && Security::isInside($base, $target)) {
             self::deleteTree($target);

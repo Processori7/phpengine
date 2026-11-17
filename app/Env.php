@@ -107,6 +107,18 @@ final class Env
             'Источник: встроенный, путь из настроек или системный.'
         );
 
+        // Runs CPython in the browser (WebAssembly), so it works even where the host
+        // forbids process execution. Checked as a feature flag, not as a server binary.
+        $browserPython = (bool) Config::get('security.browser_python', true);
+        $checks[] = self::check(
+            'Python в браузере (WASM)',
+            $browserPython
+                ? 'Pyodide ' . (string) Config::get('security.pyodide_version') . ' · без процессов'
+                : 'отключён в настройках',
+            $browserPython,
+            'Код выполняется в браузере посетителя: серверные функции запуска процессов не нужны. Открывается кнопкой «Запустить в браузере» на странице проекта.'
+        );
+
         if ($python !== null) {
             $res = Process::execute(
                 array_merge($python['cmd'], ['-c', 'import venv, ensurepip; print("ok")']),
@@ -146,6 +158,16 @@ final class Env
             !$exposed,
             'Убедитесь, что DocumentRoot указывает на public/, а .htaccess запрещает доступ к storage/.'
         );
+
+        $legacyRuntime = (string) Config::get('root') . '/runtime';
+        if (is_dir($legacyRuntime)) {
+            $checks[] = self::check(
+                'Устаревший каталог runtime/',
+                'мешает адресу /runtime',
+                false,
+                'Удалите каталог runtime/ в корне сайта: переносной Python теперь лежит в storage/runtime, а папка с таким именем перехватывает маршрут /runtime и хостинг отвечает 403.'
+            );
+        }
 
         $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
         $checks[] = self::check('HTTPS', $https ? 'да' : 'нет', $https, 'Включите cookie_secure и HSTS после перехода на HTTPS.');

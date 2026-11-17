@@ -10,7 +10,10 @@
     <h1><?= e($project['name']) ?></h1>
     <div class="muted mono" style="font-size:12px"><?= e($project['dir']) ?> · точка входа: <?= e($project['entrypoint']) ?></div>
   </div>
-  <a class="btn" href="/projects">← Все проекты</a>
+  <div class="row">
+    <a class="btn" href="/projects/<?= (int) $project['id'] ?>/browser">⚡ Запустить в браузере</a>
+    <a class="btn" href="/projects">← Все проекты</a>
+  </div>
 </div>
 
 <div class="grid cols-2">
