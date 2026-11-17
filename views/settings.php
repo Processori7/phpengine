@@ -10,7 +10,7 @@
       </div>
       <div class="field">
         <label for="login_path">Адрес входа (например engine-login → сайт/engine-login)</label>
-        <div class="row"><span class="muted mono">/</span><input id="login_path" name="login_path" type="text" class="mono" value="<?= e(Config::get('security.login_path', 'engine-login')) ?>" maxlength="40" pattern="[a-zA-Z0-9_-]{1,40}" required></div>
+        <div class="row"><span class="muted mono">/</span><input id="login_path" name="login_path" type="text" class="mono" value="<?= e(Config::get('security.login_path', 'engine-login')) ?>" maxlength="40" pattern="[A-Za-z0-9_\-]{1,40}" required></div>
       </div>
 
       <label class="check"><input type="checkbox" name="execution_enabled" value="1" <?= Config::get('security.execution_enabled', true) ? 'checked' : '' ?>> Разрешить выполнение Python-кода</label>

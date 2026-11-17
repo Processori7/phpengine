@@ -14,7 +14,8 @@ final class RuntimeManager
 
     public static function platform(): ?string
     {
-        $machine = strtolower(trim(php_uname('m')));
+        $rawMachine = php_uname('m');
+        $machine = strtolower(trim(is_string($rawMachine) ? $rawMachine : ''));
         $family = PHP_OS_FAMILY;
 
         if ($family === 'Windows') {

@@ -66,10 +66,13 @@ final class App
         if ($path === $login) {
             if ($method === 'POST') self::loginPost();
             else {
-                $captcha = Config::get('security.login_captcha', true) ? Captcha::issue() : null;
+                $captchaOn = (bool) Config::get('security.login_captcha', true);
+                $captcha = $captchaOn ? Captcha::current() : null;
+                if ($captchaOn && $captcha === null) $captcha = Captcha::issue();
+                $twofa = Auth::twoFactorPending();
                 self::view('login', [
-                    'title' => Auth::twoFactorPending() ? 'Двухфакторная аутентификация' : 'Вход',
-                    'twofa' => Auth::twoFactorPending(),
+                    'title' => $twofa ? 'Двухфакторная аутентификация' : 'Вход',
+                    'twofa' => $twofa,
                     'captcha' => $captcha,
                 ]);
             }
@@ -280,14 +283,18 @@ final class App
     private static function loginPost(): void
     {
         Security::requireCsrf();
+        $username = (string) ($_POST['username'] ?? '');
+
         if (Config::get('security.login_captcha', true) && ($_POST['action'] ?? '') !== 'twofa') {
             if (!Captcha::valid($_POST['captcha'] ?? null)) {
-                $msg = Auth::noteFailedAttempt((string) ($_POST['username'] ?? ''));
+                $msg = Auth::noteFailedAttempt($username);
+                Captcha::clear();
                 self::flash('error', 'Неверный или просроченный ответ на капчу. ' . $msg);
                 self::redirect(self::loginPath());
             }
             Captcha::clear();
         }
+
         if (($_POST['action'] ?? '') === 'twofa') {
             $res = Auth::verifyTwoFactor((string) ($_POST['code'] ?? ''));
             if (!$res['ok']) {
@@ -297,8 +304,9 @@ final class App
             self::flash('success', $res['message']);
             self::redirect('/');
         }
+
         $result = Auth::attempt(
-            (string) ($_POST['username'] ?? ''),
+            $username,
             (string) ($_POST['password'] ?? ''),
             isset($_POST['remember'])
         );

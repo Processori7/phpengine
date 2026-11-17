@@ -21,7 +21,19 @@ final class Captcha
         }
         $_SESSION['captcha_hash'] = self::hash((string) $answer);
         $_SESSION['captcha_at'] = time();
-        return ['question' => $a . ' ' . $op . ' ' . $b . ' = ?', 'token' => Security::randomToken(8)];
+        $question = $a . ' ' . $op . ' ' . $b . ' = ?';
+        $_SESSION['captcha_question'] = $question;
+        return ['question' => $question, 'token' => Security::randomToken(8)];
+    }
+
+    /** Reuse a fresh, unused challenge so duplicate page loads do not invalidate it. */
+    public static function current(): ?array
+    {
+        if (empty($_SESSION['captcha_hash']) || empty($_SESSION['captcha_at'])) return null;
+        if (time() - (int) $_SESSION['captcha_at'] > self::TTL) return null;
+        $question = (string) ($_SESSION['captcha_question'] ?? '');
+        if ($question === '') return null;
+        return ['question' => $question, 'token' => Security::randomToken(8)];
     }
 
     public static function valid(?string $input): bool
@@ -36,7 +48,7 @@ final class Captcha
 
     public static function clear(): void
     {
-        unset($_SESSION['captcha_hash'], $_SESSION['captcha_at']);
+        unset($_SESSION['captcha_hash'], $_SESSION['captcha_at'], $_SESSION['captcha_question']);
     }
 
     private static function hash(string $value): string

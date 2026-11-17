@@ -103,7 +103,7 @@ config.local.php локальные переопределения конфиг�
 
 ## Диагностика
 
-Страница `/security` показывает состояние PHP, PDO SQLite, ZIP, каталогов storage, активного Python, модуля `venv`, флагов сессий и HTTPS, а также последние события аудита.
+Страница `/security` показывает состояние PHP, PDO SQLite/MySQL, ZIP, каталогов storage, активного Python, модуля `venv`, флагов сессий и HTTPS, а также последние события аудита. Причины неудачного входа (капча, блокировка, неверный пароль) попадают в журнал аудита; отладочное логирование входа отключено и файлы не создаёт.
 
 На хостинге с Windows-файловой системой диагностика может показывать `FAIL` для прав каталога сессий: `chmod 0700` там не работает. Это ожидаемо. Проверка HTTPS будет показывать `FAIL` до тех пор, пока сайт не будет работать по HTTPS; после перехода включите `Secure`-флаг cookie и HSTS.
 
@@ -222,7 +222,7 @@ Defining the SQLite file through `config.local.php` still works as a default, bu
 
 ### Diagnostics
 
-The `/security` page shows the state of PHP, PDO SQLite, ZIP, storage directories, the active Python, the `venv` module, session flags and HTTPS, along with recent audit events.
+The `/security` page shows the state of PHP, PDO SQLite/MySQL, ZIP, storage directories, the active Python, the `venv` module, session flags and HTTPS, along with recent audit events. Failed-login reasons (CAPTCHA, lockout, bad password) are recorded in the audit log; the verbose login debug log is disabled and creates no files.
 
 On Windows filesystems, diagnostics may report `FAIL` for session directory permissions because `chmod 0700` has no effect there. This is expected. The HTTPS check will report `FAIL` until the site is served over HTTPS; after switching, enable the `Secure` cookie flag and HSTS.
 

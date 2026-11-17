@@ -97,8 +97,8 @@ final class Security
         if (!self::csrfOn()) return;
         $token = $_POST['_csrf'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
         if (!self::csrfValid(is_string($token) ? $token : null)) {
-            Security::audit('csrf_rejected');
-            Telegram::notify('security', '⚠️ Отклонён запрос без валидного CSRF-токена (IP ' . Security::clientIp() . ')');
+            self::audit('csrf_rejected');
+            Telegram::notify('security', '⚠️ Отклонён запрос без валидного CSRF-токена (IP ' . self::clientIp() . ')');
             http_response_code(419);
             exit('CSRF token mismatch. Please reload the page and try again.');
         }
